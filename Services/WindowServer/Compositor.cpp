@@ -67,7 +67,7 @@ Compositor::Compositor()
     m_display_link_notify_timer->stop();
 
     m_compose_timer = Core::Timer::create_single_shot(
-        1000 / 60,
+        1000/15,
         [this] {
             compose();
         },
@@ -103,6 +103,8 @@ void Compositor::init_bitmaps()
 
     invalidate();
 }
+
+u32 g_iteration = 0;
 
 void Compositor::compose()
 {
@@ -165,15 +167,30 @@ void Compositor::compose()
         }
     }
 
+auto iteration = ++g_iteration;
+    {
+        auto text = String::format("X %u", iteration);
+        Gfx::IntRect rect(250, 0, WindowManager::the().window_title_font().width(text), 20);
+        m_back_painter->fill_rect(rect, wm.palette().window());
+        m_back_painter->draw_text(rect, text, wm.window_title_font());
+    }
+dbg() << " ====== COMPOSE(" << iteration << ") ====== ";
+dbg() << "  dirty rects: " << dirty_rects.size();
+for (auto& dirty_rect : dirty_rects.rects()) {
+    dbg() << "    " << dirty_rect;
+}
     auto compose_window = [&](Window& window) -> IterationDecision {
         if (!any_dirty_rect_intersects_window(window))
             return IterationDecision::Continue;
+        dbg() << "  window: " << window.title() << " @ " << (void*)&window << " rect: " << window.frame().rect() << " pid: " << (window.client() ? window.client()->client_pid() : -1);
         Gfx::PainterStateSaver saver(*m_back_painter);
         m_back_painter->add_clip_rect(window.frame().rect());
         RefPtr<Gfx::Bitmap> backing_store = window.backing_store();
         for (auto& dirty_rect : dirty_rects.rects()) {
-            if (!window.is_fullscreen() && any_opaque_window_above_this_one_contains_rect(window, dirty_rect))
+            if (dirty_rect.is_empty() || (!window.is_fullscreen() && any_opaque_window_above_this_one_contains_rect(window, dirty_rect))) {
+                //dbg() << "X   " << dirty_rect;
                 continue;
+            }
             Gfx::PainterStateSaver saver(*m_back_painter);
             m_back_painter->add_clip_rect(dirty_rect);
             if (!backing_store)
@@ -224,7 +241,7 @@ void Compositor::compose()
             if (dirty_rect_in_backing_coordinates.is_empty())
                 continue;
             auto dst = backing_rect.location().translated(dirty_rect_in_backing_coordinates.location());
-
+dbg() << "    " << dirty_rect << " -> " << Gfx::IntRect(dst, dirty_rect_in_backing_coordinates.size()) << " from clip: " << m_back_painter->clip_rect();
             if (window.client() && window.client()->is_unresponsive()) {
                 m_back_painter->blit_filtered(dst, *backing_store, dirty_rect_in_backing_coordinates, [](Color src) {
                     return src.to_grayscale().darkened(0.75f);
@@ -233,12 +250,17 @@ void Compositor::compose()
                 m_back_painter->blit(dst, *backing_store, dirty_rect_in_backing_coordinates, window.opacity());
             }
 
-            for (auto background_rect : window.rect().shatter(backing_rect))
+            for (auto background_rect: window.rect().shatter(backing_rect))
                 m_back_painter->fill_rect(background_rect, wm.palette().window());
         }
         return IterationDecision::Continue;
     };
 
+
+    wm.for_each_window([](Window& window) -> IterationDecision {
+		dbg() << "[] window " << window.title () << " @" << &window << " pid: " << (window.client() ? window.client()->client_pid() : -1);
+		return IterationDecision::Continue;
+	});
     // Paint the window stack.
     if (auto* fullscreen_window = wm.active_fullscreen_window()) {
         compose_window(*fullscreen_window);
@@ -253,6 +275,13 @@ void Compositor::compose()
     run_animations();
 
     draw_cursor();
+    
+    {
+        auto text = String::format("D %u", iteration);
+        Gfx::IntRect rect(250, 0, WindowManager::the().window_title_font().width(text), 20);
+        m_back_painter->fill_rect(rect, wm.palette().window());
+        m_back_painter->draw_text(rect, text, wm.window_title_font());
+    }
 
     if (m_flash_flush) {
         for (auto& rect : dirty_rects.rects())
