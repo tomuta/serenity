@@ -221,10 +221,10 @@ void Region::set_should_cow(size_t page_index, bool cow)
     ensure_cow_map().set(page_index, cow);
 }
 
-Bitmap& Region::ensure_cow_map() const
+Bitmap<AK::Allocator>& Region::ensure_cow_map() const
 {
     if (!m_cow_map)
-        m_cow_map = make<Bitmap>(page_count(), true);
+        m_cow_map = make<Bitmap<AK::Allocator>>(page_count(), true);
     return *m_cow_map;
 }
 

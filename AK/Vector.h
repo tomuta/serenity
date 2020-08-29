@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <AK/Allocator.h>
 #include <AK/Assertions.h>
 #include <AK/Forward.h>
 #include <AK/Optional.h>
@@ -133,11 +134,14 @@ public:
     }
 };
 
-template<typename T, size_t inline_capacity>
+template<typename T, size_t inline_capacity, typename Alloc>
 class Vector {
 public:
-    Vector()
+    typedef Alloc AllocatorType;
+
+    Vector(const AllocatorType& alloc = AllocatorType())
         : m_capacity(inline_capacity)
+        , m_allocator(alloc)
     {
     }
 
@@ -159,6 +163,7 @@ public:
         : m_size(other.m_size)
         , m_capacity(other.m_capacity)
         , m_outline_buffer(other.m_outline_buffer)
+        , m_allocator(other.m_allocator)
     {
         if constexpr (inline_capacity > 0) {
             if (!m_outline_buffer) {
@@ -175,14 +180,16 @@ public:
 
     Vector(const Vector& other)
     {
+        m_allocator = other.m_allocator;
         ensure_capacity(other.size());
         TypedTransfer<T>::copy(data(), other.data(), other.size());
         m_size = other.size();
     }
 
     template<size_t other_inline_capacity>
-    Vector(const Vector<T, other_inline_capacity>& other)
+    Vector(const Vector<T, other_inline_capacity, Alloc>& other)
     {
+        m_allocator = other.allocator();
         ensure_capacity(other.size());
         TypedTransfer<T>::copy(data(), other.data(), other.size());
         m_size = other.size();
@@ -196,6 +203,7 @@ public:
     {
         if (this != &other) {
             clear();
+            m_allocator = other.m_allocator;
             m_size = other.m_size;
             m_capacity = other.m_capacity;
             m_outline_buffer = other.m_outline_buffer;
@@ -218,7 +226,7 @@ public:
     {
         clear_with_capacity();
         if (m_outline_buffer) {
-            kfree(m_outline_buffer);
+            AllocatorTraits<AllocatorType>::deallocate(m_allocator, m_outline_buffer);
             m_outline_buffer = nullptr;
         }
         reset_capacity();
@@ -531,7 +539,7 @@ public:
         if (m_capacity >= needed_capacity)
             return;
         size_t new_capacity = needed_capacity;
-        auto* new_buffer = (T*)kmalloc(new_capacity * sizeof(T));
+        auto* new_buffer = (T*)AllocatorTraits<AllocatorType>::allocate(m_allocator, new_capacity * sizeof(T));
 
         if constexpr (Traits<T>::is_trivial()) {
             TypedTransfer<T>::copy(new_buffer, data(), m_size);
@@ -542,7 +550,7 @@ public:
             }
         }
         if (m_outline_buffer)
-            kfree(m_outline_buffer);
+            AllocatorTraits<AllocatorType>::deallocate(m_allocator, m_outline_buffer);
         m_outline_buffer = new_buffer;
         m_capacity = new_capacity;
     }
@@ -629,6 +637,9 @@ public:
         return {};
     }
 
+    AllocatorType& allocator() { return m_allocator; }
+    const AllocatorType& allocator() const { return m_allocator; }
+
 private:
     void reset_capacity()
     {
@@ -659,6 +670,7 @@ private:
 
     alignas(T) unsigned char m_inline_buffer_storage[sizeof(T) * inline_capacity];
     T* m_outline_buffer { nullptr };
+    AllocatorType m_allocator;
 };
 
 }

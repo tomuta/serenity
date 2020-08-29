@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <AK/Bitmap.h>
 #include <AK/InlineLinkedList.h>
 #include <AK/String.h>
 #include <AK/Weakable.h>
@@ -190,7 +191,7 @@ public:
     void set_inherit_mode(InheritMode inherit_mode) { m_inherit_mode = inherit_mode; }
 
 private:
-    Bitmap& ensure_cow_map() const;
+    Bitmap<AK::Allocator>& ensure_cow_map() const;
 
     void set_access_bit(Access access, bool b)
     {
@@ -222,7 +223,7 @@ private:
     bool m_stack : 1 { false };
     bool m_mmap : 1 { false };
     bool m_kernel : 1 { false };
-    mutable OwnPtr<Bitmap> m_cow_map;
+    mutable OwnPtr<Bitmap<AK::Allocator>> m_cow_map;
 };
 
 inline unsigned prot_to_region_access_flags(int prot)

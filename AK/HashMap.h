@@ -33,7 +33,7 @@
 
 namespace AK {
 
-template<typename K, typename V, typename KeyTraits>
+template<typename K, typename V, typename KeyTraits, typename Alloc>
 class HashMap {
 private:
     struct Entry {
@@ -47,7 +47,12 @@ private:
     };
 
 public:
-    HashMap() {}
+    typedef Alloc AllocatorType;
+
+    HashMap(const AllocatorType& alloc = AllocatorType())
+        : m_table(alloc)
+    {
+    }
 
     bool is_empty() const { return m_table.is_empty(); }
     size_t size() const { return m_table.size(); }
@@ -67,7 +72,7 @@ public:
     }
     void remove_one_randomly() { m_table.remove(m_table.begin()); }
 
-    typedef HashTable<Entry, EntryTraits> HashTableType;
+    typedef HashTable<Entry, EntryTraits, Alloc> HashTableType;
     typedef typename HashTableType::Iterator IteratorType;
     typedef typename HashTableType::ConstIterator ConstIteratorType;
 

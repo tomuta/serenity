@@ -30,7 +30,13 @@
 
 namespace AK {
 
+template<typename Alloc>
+struct AllocatorTraits;
+struct Allocator;
+
+template<typename Alloc>
 class Bitmap;
+
 class BufferStream;
 class ByteBuffer;
 class DebugLogStream;
@@ -81,10 +87,10 @@ class CircularQueue;
 template<typename T>
 struct Traits;
 
-template<typename T, typename = Traits<T>>
+template<typename T, typename = Traits<T>, typename = Allocator>
 class HashTable;
 
-template<typename K, typename V, typename = Traits<K>>
+template<typename K, typename V, typename = Traits<K>, typename = Allocator>
 class HashMap;
 
 template<typename T>
@@ -117,7 +123,7 @@ class OwnPtr;
 template<typename T>
 class WeakPtr;
 
-template<typename T, size_t inline_capacity = 0>
+template<typename T, size_t inline_capacity = 0, typename = Allocator>
 class Vector;
 
 }

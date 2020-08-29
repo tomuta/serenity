@@ -67,7 +67,7 @@ private:
     unsigned m_pages { 0 };
     unsigned m_used { 0 };
     unsigned m_last { 0 };
-    Bitmap m_bitmap;
+    Bitmap<AK::Allocator> m_bitmap;
 };
 
 }

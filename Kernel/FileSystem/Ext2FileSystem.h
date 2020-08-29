@@ -186,7 +186,7 @@ private:
         BlockIndex bitmap_block_index { 0 };
         bool dirty { false };
         KBuffer buffer;
-        Bitmap bitmap(u32 blocks_per_group) { return Bitmap::wrap(buffer.data(), blocks_per_group); }
+        Bitmap<AK::Allocator> bitmap(u32 blocks_per_group) { return Bitmap<AK::Allocator>::wrap(buffer.data(), blocks_per_group); }
     };
 
     CachedBitmap& get_bitmap_block(BlockIndex);

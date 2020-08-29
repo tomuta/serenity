@@ -26,7 +26,9 @@
 
 #pragma once
 
+#include <AK/Allocator.h>
 #include <AK/Assertions.h>
+#include <AK/Forward.h>
 #include <AK/Noncopyable.h>
 #include <AK/Optional.h>
 #include <AK/Platform.h>
@@ -36,28 +38,32 @@
 
 namespace AK {
 
+template<typename Alloc = Allocator>
 class Bitmap {
     AK_MAKE_NONCOPYABLE(Bitmap);
 
 public:
+    typedef Alloc AllocatorType;
+
     // NOTE: A wrapping Bitmap won't try to free the wrapped data.
-    static Bitmap wrap(u8* data, size_t size)
+    static Bitmap wrap(u8* data, size_t size, const AllocatorType& alloc = AllocatorType())
     {
-        return Bitmap(data, size);
+        return Bitmap(data, size, alloc);
     }
 
-    static Bitmap create(size_t size, bool default_value = 0)
+    static Bitmap create(size_t size, bool default_value = 0, const AllocatorType& alloc = AllocatorType())
     {
-        return Bitmap(size, default_value);
+        return Bitmap(size, default_value, alloc);
     }
 
-    static Bitmap create()
+    static Bitmap create(const AllocatorType& alloc = AllocatorType())
     {
-        return Bitmap();
+        return Bitmap(alloc);
     }
 
     Bitmap(Bitmap&& other)
     {
+        m_allocator = other.m_allocator;
         m_owned = exchange(other.m_owned, false);
         m_data = exchange(other.m_data, nullptr);
         m_size = exchange(other.m_size, 0);
@@ -67,7 +73,8 @@ public:
     {
         if (this != &other) {
             if (m_owned)
-                kfree(m_data);
+                AllocatorTraits<AllocatorType>::deallocate(m_allocator, m_data);
+            m_allocator = other.m_allocator;
             m_owned = exchange(other.m_owned, false);
             m_data = exchange(other.m_data, nullptr);
             m_size = exchange(other.m_size, 0);
@@ -78,7 +85,7 @@ public:
     ~Bitmap()
     {
         if (m_owned)
-            kfree(m_data);
+            AllocatorTraits<AllocatorType>::deallocate(m_allocator, m_data);
         m_data = nullptr;
     }
 
@@ -115,7 +122,7 @@ public:
         auto previous_data = m_data;
 
         m_size = size;
-        m_data = reinterpret_cast<u8*>(kmalloc(size_in_bytes()));
+        m_data = reinterpret_cast<u8*>(AllocatorTraits<AllocatorType>::allocate(m_allocator, size_in_bytes()));
 
         fill(default_value);
 
@@ -327,15 +334,17 @@ public:
         return {};
     }
 
-    Bitmap()
-        : m_size(0)
+    Bitmap(const AllocatorType& alloc = AllocatorType())
+        : m_allocator(alloc)
+        , m_size(0)
         , m_owned(true)
     {
         m_data = nullptr;
     }
 
-    Bitmap(size_t size, bool default_value)
-        : m_size(size)
+    Bitmap(size_t size, bool default_value, const AllocatorType& alloc = AllocatorType())
+        : m_allocator(alloc)
+        , m_size(size)
         , m_owned(true)
     {
         ASSERT(m_size != 0);
@@ -343,8 +352,9 @@ public:
         fill(default_value);
     }
 
-    Bitmap(u8* data, size_t size)
-        : m_data(data)
+    Bitmap(u8* data, size_t size, const AllocatorType& alloc = AllocatorType())
+        : m_allocator(alloc)
+        , m_data(data)
         , m_size(size)
         , m_owned(false)
     {
@@ -354,6 +364,8 @@ public:
 
 private:
     size_t size_in_bytes() const { return ceil_div(m_size, static_cast<size_t>(8)); }
+
+    AllocatorType m_allocator;
 
     u8* m_data { nullptr };
     size_t m_size { 0 };

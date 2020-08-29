@@ -63,7 +63,7 @@ protected:
     int release_all_clean_pages_impl();
 
     NonnullRefPtr<Inode> m_inode;
-    Bitmap m_dirty_pages;
+    Bitmap<AK::Allocator> m_dirty_pages;
 };
 
 }

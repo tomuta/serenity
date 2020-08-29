@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <AK/Allocator.h>
 #include <AK/Assertions.h>
 #include <AK/SinglyLinkedList.h>
 #include <AK/StdLibExtras.h>
@@ -39,7 +40,7 @@ enum class HashSetResult {
     ReplacedExistingEntry
 };
 
-template<typename T, typename>
+template<typename T, typename, typename>
 class HashTable;
 
 template<typename HashTableType, typename ElementType, typename BucketIteratorType>
@@ -105,19 +106,26 @@ private:
     BucketIteratorType m_bucket_iterator;
 };
 
-template<typename T, typename TraitsForT>
+template<typename T, typename TraitsForT, typename Alloc>
 class HashTable {
 private:
-    using Bucket = SinglyLinkedList<T>;
+    typedef SinglyLinkedList<T> Bucket;
 
 public:
-    HashTable() { }
-    HashTable(size_t capacity)
-        : m_buckets(new Bucket[capacity])
+    typedef Alloc AllocatorType;
+
+    HashTable(const AllocatorType& alloc = AllocatorType())
+        : m_allocator(alloc)
+    {
+    }
+    HashTable(size_t capacity, const AllocatorType& alloc = AllocatorType())
+        : m_allocator(alloc)
+        , m_buckets(AllocatorTraits<AllocatorType>::template construct_many<Bucket>(m_allocator, capacity))
         , m_capacity(capacity)
     {
     }
     HashTable(const HashTable& other)
+        : m_allocator(other.m_allocator)
     {
         ensure_capacity(other.size());
         for (auto& it : other)
@@ -127,6 +135,7 @@ public:
     {
         if (this != &other) {
             clear();
+            m_allocator = other.m_allocator;
             ensure_capacity(other.size());
             for (auto& it : other)
                 set(it);
@@ -134,7 +143,8 @@ public:
         return *this;
     }
     HashTable(HashTable&& other)
-        : m_buckets(other.m_buckets)
+        : m_allocator(other.m_allocator)
+        , m_buckets(other.m_buckets)
         , m_size(other.m_size)
         , m_capacity(other.m_capacity)
     {
@@ -146,6 +156,7 @@ public:
     {
         if (this != &other) {
             clear();
+            m_allocator = other.m_allocator;
             m_buckets = other.m_buckets;
             m_size = other.m_size;
             m_capacity = other.m_capacity;
@@ -264,6 +275,8 @@ private:
     Bucket& bucket(size_t index) { return m_buckets[index]; }
     const Bucket& bucket(size_t index) const { return m_buckets[index]; }
 
+    AllocatorType m_allocator;
+
     Bucket* m_buckets { nullptr };
 
     size_t m_size { 0 };
@@ -272,8 +285,8 @@ private:
     bool m_rehashing { false };
 };
 
-template<typename T, typename TraitsForT>
-HashSetResult HashTable<T, TraitsForT>::set(T&& value)
+template<typename T, typename TraitsForT, typename Alloc>
+HashSetResult HashTable<T, TraitsForT, Alloc>::set(T&& value)
 {
     if (!m_capacity)
         rehash(1);
@@ -294,8 +307,8 @@ HashSetResult HashTable<T, TraitsForT>::set(T&& value)
     return HashSetResult::InsertedNewEntry;
 }
 
-template<typename T, typename TraitsForT>
-HashSetResult HashTable<T, TraitsForT>::set(const T& value)
+template<typename T, typename TraitsForT, typename Alloc>
+HashSetResult HashTable<T, TraitsForT, Alloc>::set(const T& value)
 {
     if (!m_capacity)
         rehash(1);
@@ -316,12 +329,12 @@ HashSetResult HashTable<T, TraitsForT>::set(const T& value)
     return HashSetResult::InsertedNewEntry;
 }
 
-template<typename T, typename TraitsForT>
-void HashTable<T, TraitsForT>::rehash(size_t new_capacity)
+template<typename T, typename TraitsForT, typename Alloc>
+void HashTable<T, TraitsForT, Alloc>::rehash(size_t new_capacity)
 {
     TemporaryChange<bool> change(m_rehashing, true);
     new_capacity *= 2;
-    auto* new_buckets = new Bucket[new_capacity];
+    auto* new_buckets = AllocatorTraits<AllocatorType>::template construct_many<Bucket>(m_allocator, new_capacity);
     auto* old_buckets = m_buckets;
     size_t old_capacity = m_capacity;
     m_buckets = new_buckets;
@@ -333,37 +346,37 @@ void HashTable<T, TraitsForT>::rehash(size_t new_capacity)
         }
     }
 
-    delete[] old_buckets;
+    AllocatorTraits<AllocatorType>::destroy_many(m_allocator, old_buckets, old_capacity);
 }
 
-template<typename T, typename TraitsForT>
-void HashTable<T, TraitsForT>::clear()
+template<typename T, typename TraitsForT, typename Alloc>
+void HashTable<T, TraitsForT, Alloc>::clear()
 {
     TemporaryChange<bool> change(m_clearing, true);
     if (m_buckets) {
-        delete[] m_buckets;
+        AllocatorTraits<AllocatorType>::destroy_many(m_allocator, m_buckets, m_capacity);
         m_buckets = nullptr;
     }
     m_capacity = 0;
     m_size = 0;
 }
 
-template<typename T, typename TraitsForT>
-void HashTable<T, TraitsForT>::insert(T&& value)
+template<typename T, typename TraitsForT, typename Alloc>
+void HashTable<T, TraitsForT, Alloc>::insert(T&& value)
 {
     auto& bucket = lookup(value);
     bucket.append(move(value));
 }
 
-template<typename T, typename TraitsForT>
-void HashTable<T, TraitsForT>::insert(const T& value)
+template<typename T, typename TraitsForT, typename Alloc>
+void HashTable<T, TraitsForT, Alloc>::insert(const T& value)
 {
     auto& bucket = lookup(value);
     bucket.append(value);
 }
 
-template<typename T, typename TraitsForT>
-bool HashTable<T, TraitsForT>::contains(const T& value) const
+template<typename T, typename TraitsForT, typename Alloc>
+bool HashTable<T, TraitsForT, Alloc>::contains(const T& value) const
 {
     if (is_empty())
         return false;
@@ -375,16 +388,16 @@ bool HashTable<T, TraitsForT>::contains(const T& value) const
     return false;
 }
 
-template<typename T, typename TraitsForT>
-void HashTable<T, TraitsForT>::remove(Iterator it)
+template<typename T, typename TraitsForT, typename Alloc>
+void HashTable<T, TraitsForT, Alloc>::remove(Iterator it)
 {
     ASSERT(!is_empty());
     m_buckets[it.m_bucket_index].remove(it.m_bucket_iterator);
     --m_size;
 }
 
-template<typename T, typename TraitsForT>
-auto HashTable<T, TraitsForT>::lookup(const T& value, size_t* bucket_index) -> Bucket&
+template<typename T, typename TraitsForT, typename Alloc>
+auto HashTable<T, TraitsForT, Alloc>::lookup(const T& value, size_t* bucket_index) -> Bucket&
 {
     unsigned hash = TraitsForT::hash(value);
     if (bucket_index)
@@ -392,8 +405,8 @@ auto HashTable<T, TraitsForT>::lookup(const T& value, size_t* bucket_index) -> B
     return m_buckets[hash % m_capacity];
 }
 
-template<typename T, typename TraitsForT>
-auto HashTable<T, TraitsForT>::lookup(const T& value, size_t* bucket_index) const -> const Bucket&
+template<typename T, typename TraitsForT, typename Alloc>
+auto HashTable<T, TraitsForT, Alloc>::lookup(const T& value, size_t* bucket_index) const -> const Bucket&
 {
     unsigned hash = TraitsForT::hash(value);
     if (bucket_index)

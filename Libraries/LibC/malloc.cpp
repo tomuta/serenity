@@ -153,7 +153,7 @@ struct ChunkedBlock
     size_t chunk_capacity() const { return (block_size - sizeof(ChunkedBlock)) / m_size; }
 };
 
-struct Allocator {
+struct MallocAllocator {
     size_t size { 0 };
     size_t block_count { 0 };
     size_t empty_block_count { 0 };
@@ -172,12 +172,12 @@ struct BigAllocator {
 // are run. Similarly, we can not allow global destructors to destruct
 // them. We could have used AK::NeverDestoyed to prevent the latter,
 // but it would have not helped with the former.
-static u8 g_allocators_storage[sizeof(Allocator) * num_size_classes];
+static u8 g_allocators_storage[sizeof(MallocAllocator) * num_size_classes];
 static u8 g_big_allocators_storage[sizeof(BigAllocator)];
 
-static inline Allocator (&allocators())[num_size_classes]
+static inline MallocAllocator (&allocators())[num_size_classes]
 {
-    return reinterpret_cast<Allocator(&)[num_size_classes]>(g_allocators_storage);
+    return reinterpret_cast<MallocAllocator(&)[num_size_classes]>(g_allocators_storage);
 }
 
 static inline BigAllocator (&big_allocators())[1]
@@ -185,7 +185,7 @@ static inline BigAllocator (&big_allocators())[1]
     return reinterpret_cast<BigAllocator(&)[1]>(g_big_allocators_storage);
 }
 
-static Allocator* allocator_for_size(size_t size, size_t& good_size)
+static MallocAllocator* allocator_for_size(size_t size, size_t& good_size)
 {
     for (size_t i = 0; size_classes[i]; ++i) {
         if (size <= size_classes[i]) {
@@ -490,7 +490,7 @@ void __malloc_init()
         s_profiling = true;
 
     for (size_t i = 0; i < num_size_classes; ++i) {
-        new (&allocators()[i]) Allocator();
+        new (&allocators()[i]) MallocAllocator();
         allocators()[i].size = size_classes[i];
     }
 

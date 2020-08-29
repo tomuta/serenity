@@ -1130,7 +1130,7 @@ Vector<Ext2FS::BlockIndex> Ext2FS::allocate_blocks(GroupIndex preferred_group_in
         auto& cached_bitmap = get_bitmap_block(bgd.bg_block_bitmap);
 
         int blocks_in_group = min(blocks_per_group(), super_block().s_blocks_count);
-        auto block_bitmap = Bitmap::wrap(cached_bitmap.buffer.data(), blocks_in_group);
+        auto block_bitmap = Bitmap<AK::Allocator>::wrap(cached_bitmap.buffer.data(), blocks_in_group);
 
         BlockIndex first_block_in_group = (group_index - 1) * blocks_per_group() + first_block_index();
         size_t free_region_size = 0;
@@ -1202,7 +1202,7 @@ unsigned Ext2FS::find_a_free_inode(GroupIndex preferred_group, off_t expected_si
     unsigned first_inode_in_group = (group_index - 1) * inodes_per_group() + 1;
 
     auto& cached_bitmap = get_bitmap_block(bgd.bg_inode_bitmap);
-    auto inode_bitmap = Bitmap::wrap(cached_bitmap.buffer.data(), inodes_in_group);
+    auto inode_bitmap = Bitmap<AK::Allocator>::wrap(cached_bitmap.buffer.data(), inodes_in_group);
     for (size_t i = 0; i < inode_bitmap.size(); ++i) {
         if (inode_bitmap.get(i))
             continue;
