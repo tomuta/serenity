@@ -63,10 +63,12 @@ void Lock::lock(Mode mode)
                     if (!already_hold_exclusive_lock)
                         m_mode = mode;
                     m_holder = current_thread;
+                    klog() << "Lock " << m_name << " holder: @ " << (void*)m_holder;
                     m_times_locked++;
                     m_lock.store(false, AK::memory_order_release);
                     return;
                 }
+                klog() << "Lock " << m_name << " held by: @ " << (void*)m_holder;
              } while (current_thread->wait_on(m_queue, m_name, nullptr, &m_lock, m_holder) == Thread::BlockResult::NotBlocked);
         } else if (Processor::current().in_critical()) {
             // If we're in a critical section and trying to lock, no context
@@ -96,8 +98,10 @@ void Lock::unlock()
             ASSERT(m_mode != Mode::Unlocked);
             if (m_mode == Mode::Exclusive)
                 ASSERT(m_holder == current_thread);
-            if (m_holder == current_thread && (m_mode == Mode::Shared || m_times_locked == 0))
+            if (m_holder == current_thread && (m_mode == Mode::Shared || m_times_locked == 0)) {
+                klog() << "Unlock " << m_name << " @ " << (void*)m_holder;
                 m_holder = nullptr;
+            }
 
             if (m_times_locked > 0) {
                 m_lock.store(false, AK::memory_order_release);
@@ -127,6 +131,7 @@ bool Lock::force_unlock_if_locked()
     if (m_holder != Thread::current())
         return false;
     ASSERT(m_times_locked == 1);
+    klog() << "Force Unlock " << m_name << " @ " << (void*)m_holder;
     m_holder = nullptr;
     m_mode = Mode::Unlocked;
     m_times_locked = 0;

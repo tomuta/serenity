@@ -106,6 +106,7 @@ Thread::Thread(NonnullRefPtr<Process> process)
 
 Thread::~Thread()
 {
+    klog() << "~Thread() @ " << (void*)this;
     kfree_aligned(m_fpu_state);
 
     auto thread_cnt_before = m_process->m_thread_count.fetch_sub(1, AK::MemoryOrder::memory_order_acq_rel);

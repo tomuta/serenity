@@ -88,6 +88,7 @@ void FS::sync()
 
 void FS::lock_all()
 {
+    klog() << "FS::lock_all";
     for (auto& it : all_fses()) {
         it.value->m_lock.lock();
     }
