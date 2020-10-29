@@ -112,7 +112,7 @@ bool APICTimer::calibrate(HardwareTimerBase& calibration_source)
 
     disable_local_timer();
 
-    auto delta_apic_count = end_apic_count - start_apic_count;
+    auto delta_apic_count = start_apic_count - end_apic_count; // The APIC current count register decrements!
     m_timer_period = (delta_apic_count * apic.get_timer_divisor()) / ticks_in_100ms;
 
     auto apic_freq = (delta_apic_count * apic.get_timer_divisor()) / apic.get_timer_divisor();
@@ -127,6 +127,9 @@ bool APICTimer::calibrate(HardwareTimerBase& calibration_source)
         klog() << "APICTimer: CPU clock speed: " << (delta_tsc / 1000000) << "." << (delta_tsc % 1000000) << " MHz";
     }
 #endif
+
+    // TODO: measure rather than assuming it matches?
+    m_frequency = calibration_source.ticks_per_second();
 
     enable_local_timer();
     return true;
