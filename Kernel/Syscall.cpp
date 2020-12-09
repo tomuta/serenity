@@ -40,13 +40,33 @@ extern "C" void syscall_asm_entry();
 asm(
     ".globl syscall_asm_entry\n"
     "syscall_asm_entry:\n"
+    ".cfi_startproc\n"
+    ".cfi_signal_frame\n"
+    ".cfi_def_cfa esp, 20\n"
+    ".cfi_offset eip, -16\n"
     "    pushl $0x0\n"
+    ".cfi_adjust_cfa_offset 4\n"
     "    pusha\n"
+    ".cfi_adjust_cfa_offset 36\n"
+    ".cfi_rel_offset eax, 0\n"
+    ".cfi_rel_offset ecx, 4\n"
+    ".cfi_rel_offset edx, 8\n"
+    ".cfi_rel_offset ebx, 12\n"
+    ".cfi_rel_offset ebp, 16\n"
+    ".cfi_rel_offset esp, 20\n"
+    ".cfi_rel_offset ebp, 24\n"
+    ".cfi_rel_offset esi, 28\n"
+    ".cfi_rel_offset edi, 32\n"
     "    pushl %ds\n"
+    ".cfi_adjust_cfa_offset 2\n"
     "    pushl %es\n"
+    ".cfi_adjust_cfa_offset 2\n"
     "    pushl %fs\n"
+    ".cfi_adjust_cfa_offset 2\n"
     "    pushl %gs\n"
+    ".cfi_adjust_cfa_offset 2\n"
     "    pushl %ss\n"
+    ".cfi_adjust_cfa_offset 2\n"
     "    mov $" __STRINGIFY(GDT_SELECTOR_DATA0) ", %ax\n"
     "    mov %ax, %ds\n"
     "    mov %ax, %es\n"
@@ -56,14 +76,19 @@ asm(
     "    xor %esi, %esi\n"
     "    xor %edi, %edi\n"
     "    pushl %esp \n" // set TrapFrame::regs
+    ".cfi_adjust_cfa_offset 4\n"
     "    subl $" __STRINGIFY(TRAP_FRAME_SIZE - 4) ", %esp \n"
+    ".cfi_adjust_cfa_offset " __STRINGIFY(TRAP_FRAME_SIZE - 4) "\n"
     "    movl %esp, %ebx \n"
+    ".cfi_register esp, ebp\n"
     "    pushl %ebx \n" // push pointer to TrapFrame
+    ".cfi_adjust_cfa_offset 4\n"
     "    call enter_trap_no_irq \n"
     "    movl %ebx, 0(%esp) \n" // push pointer to TrapFrame
     "    call syscall_handler \n"
     "    movl %ebx, 0(%esp) \n" // push pointer to TrapFrame
-    "    jmp common_trap_exit \n");
+    "    jmp common_trap_exit \n"
+    ".cfi_endproc\n");
 // clang-format on
 
 namespace Syscall {
