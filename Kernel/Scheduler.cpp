@@ -550,9 +550,6 @@ void Scheduler::timer_tick(const RegisterState& regs)
     ASSERT(current_thread->current_trap());
     ASSERT(current_thread->current_trap()->regs == &regs);
 
-    bool is_bsp = Processor::id() == 0;
-    if (!is_bsp)
-        return; // TODO: This prevents scheduling on other CPUs!
     if (current_thread->process().is_profiling()) {
         ASSERT(current_thread->process().perf_events());
         auto& perf_events = *current_thread->process().perf_events();
@@ -616,8 +613,7 @@ void Scheduler::idle_loop(void*)
 
         proc.idle_end();
         ASSERT_INTERRUPTS_ENABLED();
-        if (Processor::current().id() == 0)
-            yield();
+        yield();
     }
 }
 
