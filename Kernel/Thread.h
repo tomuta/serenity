@@ -120,6 +120,7 @@ class Thread
     friend class ProtectedProcessBase;
     friend class Scheduler;
     friend struct ThreadReadyQueue;
+    friend class Lock;
 
     static SpinLock<u8> g_tid_map_lock;
     static HashMap<ThreadID, Thread*>* g_tid_map;
@@ -267,6 +268,7 @@ public:
             Futex,
             Plan9FS,
             Join,
+            Lock,
             Queue,
             Routing,
             Sleep,
@@ -399,9 +401,11 @@ public:
         {
             ScopedSpinLock lock(m_lock);
             // NOTE: it's possible that the blocker is no longer present
-            m_blockers.remove_first_matching([&](auto& info) {
+            if (m_blockers.remove_first_matching([&](auto& info) {
                 return info.blocker == &blocker && info.data == data;
-            });
+            })) {
+                did_remove_blocker(blocker, data);
+            }
         }
 
         bool is_empty() const
@@ -444,6 +448,7 @@ public:
         }
 
         virtual bool should_add_blocker(Blocker&, void*) { return true; }
+        virtual void did_remove_blocker(Blocker&, void*) { }
 
         struct BlockerInfo {
             Blocker* blocker;
@@ -524,6 +529,49 @@ public:
 
     protected:
         const char* const m_block_reason;
+        bool m_should_block { true };
+        bool m_did_unblock { false };
+    };
+
+
+    class LockBlocker : public Blocker {
+        friend class Lock;
+    public:
+#if LOCK_DEBUG
+        explicit LockBlocker(Lock&, LockMode, u32 locks, const char* block_reason = nullptr, const SourceLocation& location = SourceLocation::current());
+#else
+        explicit LockBlocker(Lock&, LockMode, u32 locks, const char* block_reason = nullptr);
+#endif
+        virtual ~LockBlocker();
+
+        virtual Type blocker_type() const override { return Type::Lock; }
+        virtual const char* state_string() const override { return m_block_reason ? m_block_reason : "Lock"; }
+        virtual bool can_be_interrupted() const override { return false; }
+        virtual void not_blocking(bool) override { }
+
+        virtual bool should_block() override
+        {
+            return m_should_block;
+        }
+
+        bool unblock();
+
+        LockMode requested_mode() const { return m_requested_mode; }
+        u32 requested_locks() const { return m_locks; }
+
+#if 1
+        void set_acquire_start_time(const Time& time) { m_acquire_start_time = time; }
+        const Time& acquire_start_time() const { return m_acquire_start_time; }
+        Time m_acquire_start_time;
+#endif
+
+    protected:
+        const char* const m_block_reason;
+        const LockMode m_requested_mode;
+        const u32 m_locks;
+#if LOCK_DEBUG
+        SourceLocation m_source_location;
+#endif
         bool m_should_block { true };
         bool m_did_unblock { false };
     };
