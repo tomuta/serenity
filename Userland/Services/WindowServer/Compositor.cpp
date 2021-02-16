@@ -23,7 +23,7 @@
  * OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
-
+#define COMPOSE_DEBUG 1
 #include "Compositor.h"
 #include "ClientConnection.h"
 #include "Event.h"
@@ -242,7 +242,7 @@ void Compositor::compose()
 
     auto paint_wallpaper = [&](Gfx::Painter& painter, const Gfx::IntRect& rect) {
         // FIXME: If the wallpaper is opaque and covers the whole rect, no need to fill with color!
-        painter.fill_rect(rect, background_color);
+        painter.clear_rect(rect, background_color);
         if (m_wallpaper) {
             if (m_wallpaper_mode == WallpaperMode::Simple) {
                 painter.blit(rect.location(), *m_wallpaper, rect);
@@ -278,9 +278,9 @@ void Compositor::compose()
         auto window_rect = window.rect();
         auto frame_rects = frame_rect.shatter(window_rect);
 
-        dbgln_if(COMPOSE_DEBUG, "  window {} frame rect: {}", window.title(), frame_rect);
-
         RefPtr<Gfx::Bitmap> backing_store = window.backing_store();
+        dbgln_if(COMPOSE_DEBUG, "  window {} frame rect: {} backing: {:p}", window.title(), frame_rect, backing_store.ptr());
+
         auto compose_window_rect = [&](Gfx::Painter& painter, const Gfx::IntRect& rect) {
             if (!window.is_fullscreen()) {
                 rect.for_each_intersected(frame_rects, [&](const Gfx::IntRect& intersected_rect) {
@@ -400,6 +400,27 @@ void Compositor::compose()
 
                 prepare_transparency_rect(render_rect);
                 paint_wallpaper(temp_painter, render_rect);
+                const Color s_colors[] = {        Color::Red,
+                    Color::Green,
+                    Color::Cyan,
+                    Color::Blue,
+                    Color::Yellow,
+                    Color::Magenta,
+                    Color::DarkGray,
+                    Color::MidGray,
+                    Color::LightGray,
+                    Color::WarmGray,
+                    Color::DarkCyan,
+                    Color::DarkGreen,
+                    Color::DarkBlue,
+                    Color::DarkRed,
+                    Color::MidCyan,
+                    Color::MidGreen,
+                    Color::MidRed,
+                    Color::MidBlue,
+                    Color::MidMagenta};
+                static int s_cx = 0;
+                temp_painter.draw_rect(render_rect, s_colors[s_cx++ % (sizeof(s_colors) / sizeof(s_colors[0]))]);
                 return IterationDecision::Continue;
             });
         }
@@ -412,6 +433,7 @@ void Compositor::compose()
                 Gfx::PainterStateSaver saver(temp_painter);
                 temp_painter.add_clip_rect(render_rect);
                 compose_window_rect(temp_painter, render_rect);
+
                 return IterationDecision::Continue;
             });
         }

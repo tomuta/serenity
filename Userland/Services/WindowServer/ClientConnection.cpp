@@ -606,6 +606,7 @@ OwnPtr<Messages::WindowServer::SetWindowBackingStoreResponse> ClientConnection::
     auto& window = *(*it).value;
     if (window.last_backing_store() && window.last_backing_store_serial() == message.serial()) {
         window.swap_backing_stores();
+        dbgln("Window {} new backing store (swap): {:p}", window.title(), &(*window.backing_store()));
     } else {
         // FIXME: Plumb scale factor here eventually.
         auto backing_store = Gfx::Bitmap::create_with_anon_fd(
@@ -616,6 +617,7 @@ OwnPtr<Messages::WindowServer::SetWindowBackingStoreResponse> ClientConnection::
             {},
             Gfx::Bitmap::ShouldCloseAnonymousFile::Yes);
         window.set_backing_store(move(backing_store), message.serial());
+        dbgln("Window {} new backing store (set): {:p}", window.title(), &(*window.backing_store()));
     }
 
     if (message.flush_immediately())
