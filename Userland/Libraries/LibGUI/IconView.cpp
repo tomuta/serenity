@@ -258,7 +258,7 @@ void IconView::mouseup_event(MouseEvent& event)
         m_rubber_banding = false;
         if (m_out_of_view_timer)
             m_out_of_view_timer->stop();
-        update();
+        update(to_widget_rect(Gfx::IntRect::from_two_points(m_rubber_band_origin, m_rubber_band_current)));
     }
     AbstractView::mouseup_event(event);
 }
@@ -268,8 +268,15 @@ bool IconView::update_rubber_banding(const Gfx::IntPoint& position)
     auto adjusted_position = to_content_position(position);
     if (m_rubber_band_current != adjusted_position) {
         auto prev_rect = Gfx::IntRect::from_two_points(m_rubber_band_origin, m_rubber_band_current);
+        auto prev_rubber_band_fill_rect = prev_rect.shrunken(1, 1);
         m_rubber_band_current = adjusted_position;
         auto rubber_band_rect = Gfx::IntRect::from_two_points(m_rubber_band_origin, m_rubber_band_current);
+        auto rubber_band_fill_rect = rubber_band_rect.shrunken(1, 1);
+
+        for (auto& rect : prev_rubber_band_fill_rect.shatter(rubber_band_fill_rect))
+            update(to_widget_rect(rect.inflated(1, 1)));
+        for (auto& rect : rubber_band_fill_rect.shatter(prev_rubber_band_fill_rect))
+            update(to_widget_rect(rect.inflated(1, 1)));
 
         // If the rectangle width or height is 0, we still want to be able
         // to match the items in the path. An easy work-around for this
@@ -289,7 +296,7 @@ bool IconView::update_rubber_banding(const Gfx::IntPoint& position)
 
         auto deselect_area = prev_rect.shatter(rubber_band_rect);
         auto select_area = rubber_band_rect.shatter(prev_rect);
-
+        
         // Initialize all candidate's toggle flag. We need to know which
         // items we touched because the various rectangles likely will
         // contain the same item more than once
@@ -302,11 +309,16 @@ bool IconView::update_rubber_banding(const Gfx::IntPoint& position)
             return IterationDecision::Continue;
         });
 
+        // We're changing the selection and invalidating those items, so
+        // no need to trigger a full re-render for each item
+        set_suppress_update_on_selection_change(true);
+
         // Now toggle all items that are no longer in the selected area, once only
         for_each_item_intersecting_rects(deselect_area, [&](ItemData& item_data) -> IterationDecision {
             if (!item_data.selection_toggled && item_data.is_intersecting(prev_rect) && !item_data.is_intersecting(rubber_band_rect)) {
                 item_data.selection_toggled = true;
                 toggle_selection(item_data);
+                update(to_widget_rect(item_data.rect()));
             }
             return IterationDecision::Continue;
         });
@@ -315,11 +327,13 @@ bool IconView::update_rubber_banding(const Gfx::IntPoint& position)
             if (!item_data.selection_toggled && !item_data.is_intersecting(prev_rect) && item_data.is_intersecting(rubber_band_rect)) {
                 item_data.selection_toggled = true;
                 toggle_selection(item_data);
+                update(to_widget_rect(item_data.rect()));
             }
             return IterationDecision::Continue;
         });
 
-        update();
+        set_suppress_update_on_selection_change(false);
+
         return true;
     }
     return false;
@@ -480,6 +494,7 @@ void IconView::second_paint_event(PaintEvent& event)
     auto rubber_band_rect = Gfx::IntRect::from_two_points(m_rubber_band_origin, m_rubber_band_current);
     painter.fill_rect(rubber_band_rect, palette().rubber_band_fill());
     painter.draw_rect(rubber_band_rect, palette().rubber_band_border());
+    //dbgln("paint rubberband: {}", rubber_band_rect);
 }
 
 void IconView::paint_event(PaintEvent& event)
@@ -488,11 +503,14 @@ void IconView::paint_event(PaintEvent& event)
     Frame::paint_event(event);
 
     Painter painter(*this);
+    //auto prev_clip = painter.clip_rect();
     painter.add_clip_rect(widget_inner_rect());
     painter.add_clip_rect(event.rect());
+    //dbgln("paint_event fill:{} {} -> {} -> {} (inner rect: {})", fill_with_background_color(), event.rect(), prev_clip, painter.clip_rect(), widget_inner_rect());
 
-    if (fill_with_background_color())
-        painter.fill_rect(event.rect(), widget_background_color);
+    //dbgln("fill rect with background: {}", event.rect());
+    painter.fill_rect(event.rect(), fill_with_background_color() ? widget_background_color : Color::Transparent);
+
     painter.translate(frame_thickness(), frame_thickness());
     painter.translate(-horizontal_scrollbar().value(), -vertical_scrollbar().value());
 
