@@ -574,6 +574,15 @@ void Window::clear_dirty_rects()
     m_dirty_rects.clear_with_capacity();
 }
 
+void Window::swap_dirty_rects()
+{
+    swap(m_dirty_rects, m_last_dirty_rects);
+    swap(m_invalidated_all, m_invalidated_all_last);
+    swap(m_invalidated, m_invalidated_last);
+    if (m_invalidated || m_invalidated_all || !m_dirty_rects.is_empty())
+        Compositor::the().invalidate_window();
+}
+
 bool Window::is_active() const
 {
     return WindowManager::the().active_window() == this;

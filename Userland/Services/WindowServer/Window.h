@@ -199,6 +199,7 @@ public:
     void prepare_dirty_rects();
     void clear_dirty_rects();
     Gfx::DisjointRectSet& dirty_rects() { return m_dirty_rects; }
+    void swap_dirty_rects();
 
     virtual void event(Core::Event&) override;
 
@@ -344,6 +345,7 @@ private:
     Gfx::IntRect m_saved_nonfullscreen_rect;
     Gfx::IntRect m_taskbar_rect;
     Gfx::DisjointRectSet m_dirty_rects;
+    Gfx::DisjointRectSet m_last_dirty_rects;
     Gfx::DisjointRectSet m_opaque_rects;
     Gfx::DisjointRectSet m_transparency_rects;
     Gfx::DisjointRectSet m_transparency_wallpaper_rects;
@@ -366,7 +368,9 @@ private:
     bool m_default_positioned { false };
     bool m_have_taskbar_rect { false };
     bool m_invalidated { true };
+    bool m_invalidated_last { false };
     bool m_invalidated_all { true };
+    bool m_invalidated_all_last { false };
     bool m_invalidated_frame { true };
     WindowTileType m_tiled { WindowTileType::None };
     Gfx::IntRect m_untiled_rect;
