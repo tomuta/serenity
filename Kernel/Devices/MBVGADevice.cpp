@@ -24,6 +24,7 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <Kernel/Arch/PC/BIOS.h>
 #include <Kernel/Devices/MBVGADevice.h>
 #include <Kernel/Process.h>
 #include <Kernel/VM/AnonymousVMObject.h>
@@ -48,7 +49,27 @@ UNMAP_AFTER_INIT MBVGADevice::MBVGADevice(PhysicalAddress addr, size_t pitch, si
     , m_framebuffer_height(height)
 {
     dbgln("MBVGADevice address={}, pitch={}, width={}, height={}", addr, pitch, width, height);
+    read_edid();
     s_the = this;
+}
+
+bool MBVGADevice::read_edid()
+{
+    RegisterState regs{};
+    regs.eax = 0x4f15;
+    regs.ebx = 1;
+    BIOS bios;
+    bios.call(0x10, regs);
+    if ((regs.eax & 0xff) != 0x4f) {
+        dbgln("MBVGADevice: Reading EDID information not supported by BIOS");
+        return false;
+    }
+    if (((regs.eax >> 8) & 0xff) != 0) {
+        dbgln("MBVGADevice: Feading EDID information failed");
+        return false;
+    }
+    dbgln("MBVGADevice: EDID information in ES:DI {}:{}", regs.es, regs.edi & 0xffff);
+    return true;
 }
 
 KResultOr<Region*> MBVGADevice::mmap(Process& process, FileDescription&, const Range& range, size_t offset, int prot, bool shared)

@@ -57,6 +57,8 @@ private:
 
     size_t framebuffer_size_in_bytes() const { return m_framebuffer_pitch * m_framebuffer_height; }
 
+    bool read_edid();
+
     PhysicalAddress m_framebuffer_address;
     size_t m_framebuffer_pitch { 0 };
     size_t m_framebuffer_width { 0 };

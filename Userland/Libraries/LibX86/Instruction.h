@@ -30,7 +30,9 @@
 #include <AK/StdLibExtras.h>
 #include <AK/String.h>
 #include <AK/Types.h>
-#include <stdio.h>
+#if !defined(KERNEL)
+#    include <stdio.h>
+#endif
 
 namespace X86 {
 
@@ -396,13 +398,13 @@ public:
     void write64(CPU&, const Instruction&, T);
 
     template<typename CPU>
-    typename CPU::ValueWithShadowType8 read8(CPU&, const Instruction&);
+    typename CPU::ValueType8 read8(CPU&, const Instruction&);
     template<typename CPU>
-    typename CPU::ValueWithShadowType16 read16(CPU&, const Instruction&);
+    typename CPU::ValueType16 read16(CPU&, const Instruction&);
     template<typename CPU>
-    typename CPU::ValueWithShadowType32 read32(CPU&, const Instruction&);
+    typename CPU::ValueType32 read32(CPU&, const Instruction&);
     template<typename CPU>
-    typename CPU::ValueWithShadowType64 read64(CPU&, const Instruction&);
+    typename CPU::ValueType64 read64(CPU&, const Instruction&);
 
     template<typename CPU>
     LogicalAddress resolve(const CPU&, const Instruction&);
@@ -442,7 +444,7 @@ private:
 
 class Instruction {
 public:
-    template<typename InstructionStreamType>
+    template<typename InstructionStreamType, void(*log_error)(const StringView&) = nullptr>
     static Instruction from_stream(InstructionStreamType&, bool o32, bool a32);
     ~Instruction() { }
 
@@ -507,8 +509,13 @@ public:
     String to_string(u32 origin, const SymbolProvider* = nullptr, bool x32 = true) const;
 
 private:
-    template<typename InstructionStreamType>
-    Instruction(InstructionStreamType&, bool o32, bool a32);
+    Instruction(bool o32, bool a32)
+        : m_a32(a32)
+        , m_o32(o32)
+    {
+    }
+    template<typename InstructionStreamType, void(*log_error)(const StringView&) = nullptr>
+    void decode(InstructionStreamType&);
 
     void to_string_internal(StringBuilder&, u32 origin, const SymbolProvider*, bool x32) const;
 
@@ -695,7 +702,7 @@ ALWAYS_INLINE void MemoryOrRegisterReference::write64(CPU& cpu, const Instructio
 }
 
 template<typename CPU>
-ALWAYS_INLINE typename CPU::ValueWithShadowType8 MemoryOrRegisterReference::read8(CPU& cpu, const Instruction& insn)
+ALWAYS_INLINE typename CPU::ValueType8 MemoryOrRegisterReference::read8(CPU& cpu, const Instruction& insn)
 {
     if (is_register())
         return cpu.const_gpr8(reg8());
@@ -705,7 +712,7 @@ ALWAYS_INLINE typename CPU::ValueWithShadowType8 MemoryOrRegisterReference::read
 }
 
 template<typename CPU>
-ALWAYS_INLINE typename CPU::ValueWithShadowType16 MemoryOrRegisterReference::read16(CPU& cpu, const Instruction& insn)
+ALWAYS_INLINE typename CPU::ValueType16 MemoryOrRegisterReference::read16(CPU& cpu, const Instruction& insn)
 {
     if (is_register())
         return cpu.const_gpr16(reg16());
@@ -715,7 +722,7 @@ ALWAYS_INLINE typename CPU::ValueWithShadowType16 MemoryOrRegisterReference::rea
 }
 
 template<typename CPU>
-ALWAYS_INLINE typename CPU::ValueWithShadowType32 MemoryOrRegisterReference::read32(CPU& cpu, const Instruction& insn)
+ALWAYS_INLINE typename CPU::ValueType32 MemoryOrRegisterReference::read32(CPU& cpu, const Instruction& insn)
 {
     if (is_register())
         return cpu.const_gpr32(reg32());
@@ -725,17 +732,19 @@ ALWAYS_INLINE typename CPU::ValueWithShadowType32 MemoryOrRegisterReference::rea
 }
 
 template<typename CPU>
-ALWAYS_INLINE typename CPU::ValueWithShadowType64 MemoryOrRegisterReference::read64(CPU& cpu, const Instruction& insn)
+ALWAYS_INLINE typename CPU::ValueType64 MemoryOrRegisterReference::read64(CPU& cpu, const Instruction& insn)
 {
     VERIFY(!is_register());
     auto address = resolve(cpu, insn);
     return cpu.read_memory64(address);
 }
 
-template<typename InstructionStreamType>
+template<typename InstructionStreamType, void(*log_error)(const StringView&)>
 ALWAYS_INLINE Instruction Instruction::from_stream(InstructionStreamType& stream, bool o32, bool a32)
 {
-    return Instruction(stream, o32, a32);
+    Instruction ins(o32, a32);
+    ins.decode<InstructionStreamType, log_error>(stream);
+    return ins;
 }
 
 ALWAYS_INLINE unsigned Instruction::length() const
@@ -773,21 +782,25 @@ ALWAYS_INLINE Optional<SegmentRegister> to_segment_prefix(u8 op)
     }
 }
 
-template<typename InstructionStreamType>
-ALWAYS_INLINE Instruction::Instruction(InstructionStreamType& stream, bool o32, bool a32)
-    : m_a32(a32)
-    , m_o32(o32)
+template<typename InstructionStreamType, void(*log_error)(const StringView&)>
+ALWAYS_INLINE void Instruction::decode(InstructionStreamType& stream)
 {
+    // can't do if constexpr(log_error != nullptr)
+    // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=94554
+    using NullType = AK::IntegralConstant<decltype(log_error), nullptr>;
+    using ActualType = AK::IntegralConstant<decltype(log_error), log_error>;
+    constexpr bool have_log_error = !AK::IsSame<ActualType, NullType>::value;
+
     u8 prefix_bytes = 0;
     for (;; ++prefix_bytes) {
         u8 opbyte = stream.read8();
         if (opbyte == Prefix::OperandSizeOverride) {
-            m_o32 = !o32;
+            m_o32 = !m_o32;
             m_has_operand_size_override_prefix = true;
             continue;
         }
         if (opbyte == Prefix::AddressSizeOverride) {
-            m_a32 = !a32;
+            m_a32 = !m_a32;
             m_has_address_size_override_prefix = true;
             continue;
         }
@@ -834,16 +847,18 @@ ALWAYS_INLINE Instruction::Instruction(InstructionStreamType& stream, bool o32, 
     }
 
     if (!m_descriptor->mnemonic) {
-        if (has_sub_op()) {
-            if (has_slash)
-                fprintf(stderr, "Instruction %02X %02X /%u not understood\n", m_op, m_sub_op, slash());
-            else
-                fprintf(stderr, "Instruction %02X %02X not understood\n", m_op, m_sub_op);
-        } else {
-            if (has_slash)
-                fprintf(stderr, "Instruction %02X /%u not understood\n", m_op, slash());
-            else
-                fprintf(stderr, "Instruction %02X not understood\n", m_op);
+        if constexpr(have_log_error) {
+            if (has_sub_op()) {
+                if (has_slash)
+                    log_error(String::formatted("Instruction {:02X} {:02X} /{} not understood", m_op, m_sub_op, slash()));
+                else
+                    log_error(String::formatted("Instruction {:02X} {:02X} not understood", m_op, m_sub_op));
+            } else {
+                if (has_slash)
+                    log_error(String::formatted("Instruction {:02X} /{} not understood", m_op, slash()));
+                else
+                    log_error(String::formatted("Instruction {:02X} not understood", m_op));
+            }
         }
         m_descriptor = nullptr;
         return;
@@ -887,7 +902,8 @@ ALWAYS_INLINE Instruction::Instruction(InstructionStreamType& stream, bool o32, 
 
 #ifdef DISALLOW_INVALID_LOCK_PREFIX
     if (m_has_lock_prefix && !m_descriptor->lock_prefix_allowed) {
-        fprintf(stderr, "Instruction not allowed with LOCK prefix, this will raise #UD\n");
+        if constexpr(have_log_error)
+            log_error("Instruction not allowed with LOCK prefix, this will raise #UD"sv);
         m_descriptor = nullptr;
     }
 #endif

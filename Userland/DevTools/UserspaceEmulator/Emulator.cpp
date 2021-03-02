@@ -243,6 +243,11 @@ bool Emulator::load_elf()
     return true;
 }
 
+static void log_to_stderr(const StringView& msg)
+{
+    fprintf(stderr, "%.*s\n", (int)msg.length(), msg.characters_without_null_termination());
+}
+
 int Emulator::exec()
 {
     // X86::ELFSymbolProvider symbol_provider(*m_elf);
@@ -253,7 +258,7 @@ int Emulator::exec()
     while (!m_shutdown) {
         m_cpu.save_base_eip();
 
-        auto insn = X86::Instruction::from_stream(m_cpu, true, true);
+        auto insn = X86::Instruction::from_stream<SoftCPU, log_to_stderr>(m_cpu, true, true);
 
         if (trace)
             outln("{:p}  \033[33;1m{}\033[0m", m_cpu.base_eip(), insn.to_string(m_cpu.base_eip(), symbol_provider));

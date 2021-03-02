@@ -26,11 +26,76 @@
 
 #pragma once
 
+#include <AK/Types.h>
 #include <Kernel/VM/MappedROM.h>
 
 namespace Kernel {
 
 MappedROM map_bios();
 MappedROM map_ebda();
+
+class BIOSEmulator;
+
+struct BIOSEmulatorMemory {
+    FlatPtr begin;
+    FlatPtr end;
+    u8* mapped_base;
+
+    enum class Type {
+        Code,
+        DataReadOnly,
+        DataReadWrite
+    };
+    Type type;
+
+    explicit BIOSEmulatorMemory(FlatPtr begin, FlatPtr end, u8* mapped_base, Type type)
+        : begin(begin)
+        , end(end)
+        , mapped_base(mapped_base)
+        , type(type)
+    {
+    }
+    explicit BIOSEmulatorMemory(const MappedROM& rom, Type type)
+        : begin(rom.paddr.get())
+        , end(rom.paddr.get() + rom.size)
+        , mapped_base(rom.region->vaddr().as_ptr())
+        , type(type)
+    {
+    }
+
+    ALWAYS_INLINE bool contains(FlatPtr ptr) const
+    {
+        if (ptr < begin)
+            return false;
+        return ptr < end;
+    }
+
+    template<typename T>
+    ALWAYS_INLINE void write(FlatPtr offset, T value)
+    {
+        VERIFY(begin + offset <= end);
+        *reinterpret_cast<volatile T*>(mapped_base + offset) = value;
+    }
+    template<typename T>
+    ALWAYS_INLINE T read(FlatPtr offset) const
+    {
+        VERIFY(begin + offset <= end);
+        return *reinterpret_cast<volatile T*>(mapped_base + offset);
+    }
+};
+
+class BIOS {
+public:
+    BIOS();
+    ~BIOS();
+    void call(u8 interrupt_number, RegisterState& regs);
+private:
+    MappedROM m_bios_rom;
+    OwnPtr<Region> m_bios_ivt;
+    BIOSEmulatorMemory m_bios;
+    BIOSEmulatorMemory m_ivt;
+    BIOSEmulator* m_emulator;
+};
+
 
 }
