@@ -242,6 +242,7 @@ set(KERNEL_SOURCES
     UserOrKernelBuffer.cpp
     VirtIO/VirtIO.cpp
     VirtIO/VirtIOConsole.cpp
+    VirtIO/VirtIOGPU.cpp
     VirtIO/VirtIOQueue.cpp
     VirtIO/VirtIORNG.cpp
     VM/AnonymousVMObject.cpp

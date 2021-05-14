@@ -19,6 +19,7 @@ enum class PCIVendorID {
 enum class PCIDeviceID {
     VirtIOConsole = 0x1003,
     VirtIOEntropy = 0x1005,
+    VirtIOGPU = 0x1050,
 };
 
 }
