@@ -316,4 +316,15 @@ void ScreenInput::on_receive_keyboard_data(::KeyEvent kernel_event)
     Core::EventLoop::current().post_event(WindowManager::the(), move(message));
 }
 
+void Screen::flush_display(const Gfx::IntRect& flush_region)
+{
+    FBRect rect {
+        .x = static_cast<unsigned>(flush_region.x()),
+        .y = static_cast<unsigned>(flush_region.y()),
+        .width = static_cast<unsigned>(flush_region.width()),
+        .height = static_cast<unsigned>(flush_region.height())
+    };
+    fb_flush_buffer(m_framebuffer_fd, &rect);
+}
+
 }

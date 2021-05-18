@@ -53,7 +53,8 @@ $SERENITY_EXTRA_QEMU_ARGS
 -cpu $SERENITY_QEMU_CPU
 -d guest_errors
 -smp 2
--device virtio-vga,virgl=on
+-display sdl,gl=on
+-vga virtio
 -drive file=${SERENITY_DISK_IMAGE},format=raw,index=0,media=disk
 -usb
 -device virtio-serial
@@ -76,8 +77,8 @@ $SERENITY_EXTRA_QEMU_ARGS
 -machine q35
 -d guest_errors
 -smp 2
--device bochs-display
--vga none
+-display sdl,gl=on
+-vga virtio
 -device piix3-ide
 -drive file=${SERENITY_DISK_IMAGE},id=disk,if=none
 -device ahci,id=ahci
