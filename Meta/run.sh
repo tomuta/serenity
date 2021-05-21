@@ -53,7 +53,7 @@ $SERENITY_EXTRA_QEMU_ARGS
 -cpu $SERENITY_QEMU_CPU
 -d guest_errors
 -smp 2
--display sdl,gl=on
+-display gtk
 -vga virtio
 -drive file=${SERENITY_DISK_IMAGE},format=raw,index=0,media=disk
 -usb

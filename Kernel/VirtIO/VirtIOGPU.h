@@ -149,6 +149,13 @@ public:
         Normal,
     };
 
+    // TODO: adopt_ref?
+    VMObject& framebuffer_vm_object() { return m_framebuffer->vmobject(); }
+
+    size_t framebuffer_width() { return m_display_info.rect.width; }
+    size_t framebuffer_height() { return m_display_info.rect.height; }
+    size_t framebuffer_pitch() { return m_display_info.rect.width * 4; }
+
 private:
     virtual const char* class_name() const override { return m_class_name.characters(); }
 
@@ -166,9 +173,6 @@ private:
     virtual String device_name() const override { return String::formatted("fb{}", minor()); }
     virtual void handle_queue_update(u16 queue_index) override;
 
-    size_t framebuffer_width() { return m_display_info.rect.width; }
-    size_t framebuffer_height() { return m_display_info.rect.height; }
-    size_t framebuffer_pitch() { return m_display_info.rect.width * 4; }
     size_t framebuffer_size_in_bytes() const;
 
     u32 get_pending_events();

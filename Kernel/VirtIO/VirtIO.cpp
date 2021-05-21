@@ -33,7 +33,6 @@ UNMAP_AFTER_INIT void VirtIO::detect()
             break;
         }
         case (u16)PCIDeviceID::VirtIOGPU: {
-            [[maybe_unused]] auto& unused = adopt_ref(*new VirtIOGPU(address)).leak_ref();
             break;
         }
         default:

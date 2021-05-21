@@ -200,9 +200,9 @@ static inline BGRColor convert_standard_color_to_bgr_color(Console::Color color)
     }
 }
 
-NonnullRefPtr<FramebufferConsole> FramebufferConsole::initialize(PhysicalAddress framebuffer_address, size_t width, size_t height, size_t pitch)
+NonnullRefPtr<FramebufferConsole> FramebufferConsole::initialize(VMObject& vm_object, size_t width, size_t height, size_t pitch)
 {
-    return adopt_ref(*new FramebufferConsole(framebuffer_address, width, height, pitch));
+    return adopt_ref(*new FramebufferConsole(vm_object, width, height, pitch));
 }
 
 void FramebufferConsole::set_resolution(size_t width, size_t height, size_t pitch)
@@ -211,21 +211,39 @@ void FramebufferConsole::set_resolution(size_t width, size_t height, size_t pitc
     m_height = height;
     m_pitch = pitch;
 
-    dbgln("Framebuffer Console: taking {} bytes", page_round_up(pitch * height));
-    m_framebuffer_region = MM.allocate_kernel_region(m_framebuffer_address, page_round_up(pitch * height), "Framebuffer Console", Region::Access::Read | Region::Access::Write, Region::Cacheable::Yes);
-    VERIFY(m_framebuffer_region);
-
     // Just to start cleanly, we clean the entire framebuffer
     memset(m_framebuffer_region->vaddr().as_ptr(), 0, pitch * height);
 
     ConsoleManagement::the().resolution_was_changed();
 }
 
-FramebufferConsole::FramebufferConsole(PhysicalAddress framebuffer_address, size_t width, size_t height, size_t pitch)
+NonnullRefPtr<FramebufferConsole> FramebufferConsole::initialize(PhysicalAddress paddr, size_t width, size_t height, size_t pitch)
+{
+    return adopt_ref(*new FramebufferConsole(paddr, width, height, pitch));
+}
+
+FramebufferConsole::FramebufferConsole(VMObject& vm_object, size_t width, size_t height, size_t pitch)
     : Console(width, height)
-    , m_framebuffer_address(framebuffer_address)
     , m_pitch(pitch)
 {
+    dbgln("Framebuffer Console: taking {} bytes", page_round_up(pitch * height));
+    m_framebuffer_region = MM.allocate_kernel_region_with_vmobject(vm_object, vm_object.size(), "Framebuffer Console", Region::Access::Read | Region::Access::Write, Region::Cacheable::Yes);
+    VERIFY(m_framebuffer_region);
+
+    // Just to start cleanly, we clean the entire framebuffer
+    memset(m_framebuffer_region->vaddr().as_ptr(), 0, pitch * height);
+
+    set_resolution(width, height, pitch);
+}
+
+FramebufferConsole::FramebufferConsole(PhysicalAddress paddr, size_t width, size_t height, size_t pitch)
+    : Console(width, height)
+    , m_pitch(pitch)
+{
+    dbgln("Framebuffer Console: taking {} bytes", page_round_up(pitch * height));
+    m_framebuffer_region = MM.allocate_kernel_region(paddr, page_round_up(pitch * height), "Framebuffer Console", Region::Access::Read | Region::Access::Write, Region::Cacheable::Yes);
+    VERIFY(m_framebuffer_region);
+
     set_resolution(width, height, pitch);
 }
 

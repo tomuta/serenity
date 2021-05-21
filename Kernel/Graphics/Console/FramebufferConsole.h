@@ -15,6 +15,7 @@ namespace Kernel::Graphics {
 class FramebufferConsole final : public Console {
 public:
     static NonnullRefPtr<FramebufferConsole> initialize(PhysicalAddress, size_t width, size_t height, size_t pitch);
+    static NonnullRefPtr<FramebufferConsole> initialize(VMObject&, size_t width, size_t height, size_t pitch);
 
     void set_resolution(size_t width, size_t height, size_t pitch);
 
@@ -42,8 +43,8 @@ public:
 protected:
     void clear_glyph(size_t x, size_t y) const;
     FramebufferConsole(PhysicalAddress, size_t width, size_t height, size_t pitch);
+    FramebufferConsole(VMObject&, size_t width, size_t height, size_t pitch);
     OwnPtr<Region> m_framebuffer_region;
-    PhysicalAddress m_framebuffer_address;
     size_t m_pitch;
     mutable SpinLock<u8> m_lock;
 };

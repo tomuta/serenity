@@ -25,6 +25,7 @@ class GraphicsManagement {
     friend class BochsGraphicsAdapter;
     friend class IntelNativeGraphicsAdapter;
     friend class VGACompatibleAdapter;
+    friend class VirtIOGraphicsAdapter;
     AK_MAKE_ETERNAL
 
 public:

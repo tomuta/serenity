@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include "VGACompatibleAdapter.h"
 #include <AK/Checked.h>
 #include <AK/Singleton.h>
 #include <Kernel/CommandLine.h>
@@ -14,10 +15,12 @@
 #include <Kernel/Graphics/GraphicsManagement.h>
 #include <Kernel/Graphics/IntelNativeGraphicsAdapter.h>
 #include <Kernel/Graphics/VGACompatibleAdapter.h>
+#include <Kernel/Graphics/VirtIOGPU/VirtIOGraphicsAdapter.h>
 #include <Kernel/IO.h>
 #include <Kernel/Multiboot.h>
 #include <Kernel/PCI/IDs.h>
 #include <Kernel/Panic.h>
+#include <Kernel/PCI/IDs.h>
 #include <Kernel/VM/AnonymousVMObject.h>
 
 namespace Kernel {
@@ -129,6 +132,9 @@ UNMAP_AFTER_INIT bool GraphicsManagement::initialize()
         } else if (is_vga_compatible) {
             if (id.vendor_id == 0x8086) {
                 adapter = IntelNativeGraphicsAdapter::initialize(address);
+            } else if (id.vendor_id == static_cast<u16>(PCIVendorID::VirtIO)) {
+                dmesgln("Graphics: Using VirtIO console");
+                adapter = VirtIOGraphicsAdapter::initialize(address);
             }
         }
         if (adapter)
