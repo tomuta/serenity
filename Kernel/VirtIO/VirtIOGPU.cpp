@@ -13,10 +13,37 @@
 
 namespace Kernel {
 
+unsigned VirtIOGPUFrameBuffer::next_device_id = 0;
 unsigned VirtIOGPU::next_device_id = 0;
 
+VirtIOGPUFrameBuffer::VirtIOGPUFrameBuffer(VirtIOGPU& gpu, u32 scanout)
+    : BlockDevice(gpu.major(), (scanout + 1) << 8 | (gpu.minor() & 0xff)) // TODO: find a better way
+    , m_gpu(gpu)
+    , m_device_id(next_device_id++)
+    , m_scanout(scanout)
+    , m_framebuffer_resource_id(scanout + 1) // use a 1:1 mapping (1-based)
+{
+    VERIFY(gpu.minor() <= 0xff);
+    VERIFY(scanout < 0xff);
+}
+
+size_t VirtIOGPUFrameBuffer::framebuffer_width()
+{
+    return m_gpu.m_display_info[m_scanout].rect.width;
+}
+
+size_t VirtIOGPUFrameBuffer::framebuffer_height()
+{
+    return m_gpu.m_display_info[m_scanout].rect.height;
+}
+
+size_t VirtIOGPUFrameBuffer::framebuffer_pitch()
+{
+    return m_gpu.m_display_info[m_scanout].rect.width * 4;
+}
+
 VirtIOGPU::VirtIOGPU(PCI::Address address)
-    : BlockDevice(226, next_device_id++)
+    : Kernel::Device(226, next_device_id++)
     , VirtIODevice(address, "VirtIOGPU")
     , m_scratch_space(MM.allocate_contiguous_kernel_region(8 * PAGE_SIZE, "VirtGPU Scratch Space", Region::Access::Read | Region::Access::Write))
 {
@@ -43,18 +70,25 @@ VirtIOGPU::VirtIOGPU(PCI::Address address)
         }
         // 1. Get display information using VIRTIO_GPU_CMD_GET_DISPLAY_INFO
         query_display_information();
-        // 2. Create BUFFER using VIRTIO_GPU_CMD_RESOURCE_CREATE_2D
-        create_framebuffer();
-        // 3. Attach backing storage using  VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING
-        attach_backing_storage();
-        // 4. Use VIRTIO_GPU_CMD_SET_SCANOUT to link the framebuffer to a display scanout.
-        attach_framebuffer_to_scanout();
-        // 5. Render to your framebuffer memory.
-        draw_pretty_pattern();
-        // 6. Use VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D to update the host resource from guest memory.
-        transfer_framebuffer_data_to_host(m_display_info.rect);
-        // 7. Use VIRTIO_GPU_CMD_RESOURCE_FLUSH to flush the updated resource to the display.
-        flush_displayed_image(m_display_info.rect);
+        VERIFY(m_num_scanouts <= VIRTIO_GPU_MAX_SCANOUTS);
+        for (u32 scanout = 0; scanout < m_num_scanouts; scanout++) {
+            // 2. Create BUFFER using VIRTIO_GPU_CMD_RESOURCE_CREATE_2D
+            auto framebuffer_device = adopt_ref(*new VirtIOGPUFrameBuffer(*this, scanout));
+            m_framebuffers[scanout] = framebuffer_device;
+
+            framebuffer_device->create_framebuffer();
+            // 3. Attach backing storage using  VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING
+            framebuffer_device->attach_backing_storage();
+            // 4. Use VIRTIO_GPU_CMD_SET_SCANOUT to link the framebuffer to a display scanout.
+            framebuffer_device->attach_framebuffer_to_scanout();
+            // 5. Render to your framebuffer memory.
+            framebuffer_device->draw_pretty_pattern();
+            // 6. Use VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D to update the host resource from guest memory.
+            auto& display_info = m_display_info[scanout];
+            framebuffer_device->transfer_framebuffer_data_to_host(display_info.rect);
+            // 7. Use VIRTIO_GPU_CMD_RESOURCE_FLUSH to flush the updated resource to the display.
+            framebuffer_device->flush_displayed_image(display_info.rect);
+        }
     }
 }
 
@@ -62,7 +96,7 @@ VirtIOGPU::~VirtIOGPU()
 {
 }
 
-int VirtIOGPU::ioctl(FileDescription&, unsigned request, FlatPtr arg)
+int VirtIOGPUFrameBuffer::ioctl(FileDescription&, unsigned request, FlatPtr arg)
 {
     REQUIRE_PROMISE(video);
     switch (request) {
@@ -94,7 +128,7 @@ int VirtIOGPU::ioctl(FileDescription&, unsigned request, FlatPtr arg)
             .width = user_dirty_rect.width,
             .height = user_dirty_rect.height
         };
-        transfer_framebuffer_data_to_host(m_display_info.rect);
+        transfer_framebuffer_data_to_host(display_info().rect);
         flush_displayed_image(dirty_rect);
         return 0;
     }
@@ -103,7 +137,7 @@ int VirtIOGPU::ioctl(FileDescription&, unsigned request, FlatPtr arg)
     };
 }
 
-KResultOr<Region*> VirtIOGPU::mmap(Process& process, FileDescription&, const Range& range, u64 offset, int prot, bool shared)
+KResultOr<Region*> VirtIOGPUFrameBuffer::mmap(Process& process, FileDescription&, const Range& range, u64 offset, int prot, bool shared)
 {
     REQUIRE_PROMISE(video);
     if (!shared)
@@ -160,39 +194,41 @@ void VirtIOGPU::query_display_information()
 
     synchronous_virtio_gpu_command(start_of_scratch_space(), sizeof(request), sizeof(response));
 
-    for (size_t i = 0; i < VIRTIO_GPU_MAX_SCANOUTS; ++i) {
+    VERIFY(m_num_scanouts <= VIRTIO_GPU_MAX_SCANOUTS);
+    for (size_t i = 0; i < m_num_scanouts; ++i) {
         auto& scanout = response.scanout_modes[i];
-        if (!scanout.enabled)
-            continue;
-        dbgln("Scanout {}: x: {}, y: {}, width: {}, height: {}", i, scanout.rect.x, scanout.rect.y, scanout.rect.width, scanout.rect.height);
-        m_display_info = scanout;
-        m_chosen_scanout = i;
+        dbgln("Scanout {}: enabled: {} rect: {},{} {}x{}", i, !!scanout.enabled, scanout.rect.x, scanout.rect.y, scanout.rect.width, scanout.rect.height);
+        auto& info = m_display_info[i];
+        info = scanout;
+
+        info.rect.width = 1024;
+        info.rect.height = 768;
     }
-    m_display_info.rect.width = 1024;
-    m_display_info.rect.height = 768;
 }
 
-void VirtIOGPU::create_framebuffer()
+void VirtIOGPUFrameBuffer::create_framebuffer()
 {
-    auto& request = *reinterpret_cast<VirtIOGPUResourceCreate2D*>(m_scratch_space->vaddr().as_ptr());
-    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((m_scratch_space->vaddr().offset(sizeof(request)).as_ptr()));
+    auto& scratch = scratch_space();
+    auto& request = *reinterpret_cast<VirtIOGPUResourceCreate2D*>(scratch.vaddr().as_ptr());
+    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((scratch.vaddr().offset(sizeof(request)).as_ptr()));
 
-    populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_CREATE_2D, VIRTIO_GPU_FLAG_FENCE);
+    m_gpu.populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_CREATE_2D, VIRTIO_GPU_FLAG_FENCE);
 
-    request.resource_id = m_framebuffer_id = 1;
-    request.width = m_display_info.rect.width;
-    request.height = m_display_info.rect.height;
+    request.resource_id = m_framebuffer_resource_id;
+    auto& info = display_info();
+    request.width = info.rect.width;
+    request.height = info.rect.height;
     request.format = static_cast<u32>(VirtIOGPUFormats::VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM);
 
-    synchronous_virtio_gpu_command(start_of_scratch_space(), sizeof(request), sizeof(response));
+    m_gpu.synchronous_virtio_gpu_command(m_gpu.start_of_scratch_space(), sizeof(request), sizeof(response));
 
     VERIFY(response.type == static_cast<u32>(VirtIOGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA));
-    dbgln("VirtIOGPU: Allocated resource id");
+    dbgln("VirtIOGPU: Allocated resource id {} for output #{} using rect {},{} {}x{}", m_framebuffer_resource_id, m_scanout, info.rect.x, info.rect.y, info.rect.width, info.rect.height);
 }
 
-void VirtIOGPU::attach_backing_storage()
+void VirtIOGPUFrameBuffer::attach_backing_storage()
 {
-    // Allocate backing region
+    // Allocate backing regiondbgln("VirtIOGPU: Allocated backing storage");
     size_t buffer_length = framebuffer_size_in_bytes();
     m_framebuffer = MM.allocate_kernel_region(page_round_up(buffer_length), "VirtGPU FrameBuffer", Region::Access::Read | Region::Access::Write, AllocationStrategy::AllocateNow);
     VERIFY(!!m_framebuffer);
@@ -200,49 +236,54 @@ void VirtIOGPU::attach_backing_storage()
     VERIFY(num_mem_regions == m_framebuffer->vmobject().page_count());
 
     // Send request
-    auto& request = *reinterpret_cast<VirtIOGPUResourceAttachBacking*>(m_scratch_space->vaddr().as_ptr());
+    auto& scratch = scratch_space();
+    auto& request = *reinterpret_cast<VirtIOGPUResourceAttachBacking*>(scratch.vaddr().as_ptr());
     const size_t header_block_size = sizeof(request) + num_mem_regions * sizeof(VirtIOGPUMemEntry);
-    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((m_scratch_space->vaddr().offset(header_block_size).as_ptr()));
+    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((scratch.vaddr().offset(header_block_size).as_ptr()));
 
-    populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING, VIRTIO_GPU_FLAG_FENCE);
-    request.resource_id = m_framebuffer_id = 1;
+    m_gpu.populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING, VIRTIO_GPU_FLAG_FENCE);
+    request.resource_id = m_framebuffer_resource_id;
     request.num_entries = num_mem_regions;
     for (size_t i = 0; i < num_mem_regions; ++i) {
         request.entries[i].address = m_framebuffer->physical_page(i)->paddr().get();
         request.entries[i].length = min((size_t)4096, buffer_length - (i * PAGE_SIZE));
     }
 
-    synchronous_virtio_gpu_command(start_of_scratch_space(), header_block_size, sizeof(response));
+    m_gpu.synchronous_virtio_gpu_command(m_gpu.start_of_scratch_space(), header_block_size, sizeof(response));
 
     VERIFY(response.type == static_cast<u32>(VirtIOGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA));
-    dbgln("VirtIOGPU: Allocated backing storage");
+    dbgln("VirtIOGPU: Allocated backing storage for output #{} using resource id {}", m_scanout, m_framebuffer_resource_id);
 }
 
-size_t VirtIOGPU::framebuffer_size_in_bytes() const
+size_t VirtIOGPUFrameBuffer::framebuffer_size_in_bytes() const
 {
-    return m_display_info.rect.width * m_display_info.rect.height * sizeof(u32);
+    auto& info = display_info();
+    return info.rect.width * info.rect.height * sizeof(u32);
 }
 
-void VirtIOGPU::attach_framebuffer_to_scanout()
+void VirtIOGPUFrameBuffer::attach_framebuffer_to_scanout()
 {
-    auto& request = *reinterpret_cast<VirtIOGPUSetScanOut*>(m_scratch_space->vaddr().as_ptr());
-    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((m_scratch_space->vaddr().offset(sizeof(request)).as_ptr()));
+    const auto& rect = display_info().rect;
+    dbgln("VirtIOGPU: Set backing scanout for output #{} to resource id {} using rect {},{} {}x{}", m_scanout, m_framebuffer_resource_id, rect.x, rect.y, rect.width, rect.height);
+    auto& scratch = scratch_space();
+    auto& request = *reinterpret_cast<VirtIOGPUSetScanOut*>(scratch.vaddr().as_ptr());
+    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((scratch.vaddr().offset(sizeof(request)).as_ptr()));
 
-    populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_SET_SCANOUT, VIRTIO_GPU_FLAG_FENCE);
-    request.resource_id = m_framebuffer_id;
-    request.scanout_id = m_chosen_scanout.value();
-    request.rect = m_display_info.rect;
+    m_gpu.populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_SET_SCANOUT, VIRTIO_GPU_FLAG_FENCE);
+    request.scanout_id = m_scanout;
+    request.resource_id = m_framebuffer_resource_id;
+    request.rect = rect;
 
-    synchronous_virtio_gpu_command(start_of_scratch_space(), sizeof(request), sizeof(response));
+    m_gpu.synchronous_virtio_gpu_command(m_gpu.start_of_scratch_space(), sizeof(request), sizeof(response));
 
     VERIFY(response.type == static_cast<u32>(VirtIOGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA));
-    dbgln("VirtIOGPU: Set backing scanout");
 }
 
-void VirtIOGPU::draw_pretty_pattern()
+void VirtIOGPUFrameBuffer::draw_pretty_pattern()
 {
-    size_t width = m_display_info.rect.width;
-    size_t height = m_display_info.rect.height;
+    auto& info = display_info();
+    size_t width = info.rect.width;
+    size_t height = info.rect.height;
     size_t num_pixels = width * height;
     u8* data = m_framebuffer->vaddr().as_ptr();
     dbgln("Going to draw the pattern");
@@ -250,7 +291,19 @@ void VirtIOGPU::draw_pretty_pattern()
     for (size_t i = 0; i < 4 * num_pixels; ++i) {
         data[i] = 0xff;
     }
-    // Circle drawing algorithm for red center
+    // Circle drawing algorithm for colored center
+    static const u8 dot_color_rgb[][3] = {
+        { 255, 0, 0 },
+        { 0, 255, 0 },
+        { 0, 0, 255 },
+        { 255, 153, 153 },
+        { 153, 255, 153 },
+        { 153, 153, 255 },
+        { 255, 204, 204 },
+        { 204, 255, 204 },
+        { 204, 204, 255 },
+    };
+    const auto& dot_color = dot_color_rgb[m_scanout % (sizeof(dot_color_rgb) / sizeof(dot_color_rgb[0]))];
     auto draw_red_pixel_mirrored = [&](int x, int y) {
         VERIFY(0 <= x && x <= 200);
         VERIFY(0 <= y && y <= 200);
@@ -260,9 +313,9 @@ void VirtIOGPU::draw_pretty_pattern()
             for (auto i2 = 0; i2 < 2; ++i2) {
                 for (auto i3 = 0; i3 < 2; ++i3) {
                     auto i = width * (ny + (height / 2)) + nx + (width / 2);
-                    data[(4 * i) + 0] = 0;
-                    data[(4 * i) + 1] = 0;
-                    data[(4 * i) + 2] = 0xff;
+                    data[(4 * i) + 0] = dot_color[2];
+                    data[(4 * i) + 1] = dot_color[1];
+                    data[(4 * i) + 2] = dot_color[0];
                     data[(4 * i) + 3] = 0xff;
                     ny *= -1;
                 }
@@ -279,31 +332,33 @@ void VirtIOGPU::draw_pretty_pattern()
     dbgln("Finish drawing the pattern");
 }
 
-void VirtIOGPU::transfer_framebuffer_data_to_host(VirtIOGPURect dirty_rect)
+void VirtIOGPUFrameBuffer::transfer_framebuffer_data_to_host(VirtIOGPURect dirty_rect)
 {
-    auto& request = *reinterpret_cast<VirtIOGPUTransferToHost2D*>(m_scratch_space->vaddr().as_ptr());
-    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((m_scratch_space->vaddr().offset(sizeof(request)).as_ptr()));
+    auto& scratch = scratch_space();
+    auto& request = *reinterpret_cast<VirtIOGPUTransferToHost2D*>(scratch.vaddr().as_ptr());
+    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((scratch.vaddr().offset(sizeof(request)).as_ptr()));
 
-    populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D, VIRTIO_GPU_FLAG_FENCE);
+    m_gpu.populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D, VIRTIO_GPU_FLAG_FENCE);
     request.offset = 0;
-    request.resource_id = m_framebuffer_id;
+    request.resource_id = m_framebuffer_resource_id;
     request.rect = dirty_rect;
 
-    synchronous_virtio_gpu_command(start_of_scratch_space(), sizeof(request), sizeof(response));
+    m_gpu.synchronous_virtio_gpu_command(m_gpu.start_of_scratch_space(), sizeof(request), sizeof(response));
 
     VERIFY(response.type == static_cast<u32>(VirtIOGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA));
 }
 
-void VirtIOGPU::flush_displayed_image(VirtIOGPURect dirty_rect)
+void VirtIOGPUFrameBuffer::flush_displayed_image(VirtIOGPURect dirty_rect)
 {
-    auto& request = *reinterpret_cast<VirtIOGPUResourceFlush*>(m_scratch_space->vaddr().as_ptr());
-    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((m_scratch_space->vaddr().offset(sizeof(request)).as_ptr()));
+    auto& scratch = scratch_space();
+    auto& request = *reinterpret_cast<VirtIOGPUResourceFlush*>(scratch.vaddr().as_ptr());
+    auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((scratch.vaddr().offset(sizeof(request)).as_ptr()));
 
-    populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_FLUSH, VIRTIO_GPU_FLAG_FENCE);
-    request.resource_id = m_framebuffer_id;
+    m_gpu.populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_RESOURCE_FLUSH, VIRTIO_GPU_FLAG_FENCE);
+    request.resource_id = m_framebuffer_resource_id;
     request.rect = dirty_rect;
 
-    synchronous_virtio_gpu_command(start_of_scratch_space(), sizeof(request), sizeof(response));
+    m_gpu.synchronous_virtio_gpu_command(m_gpu.start_of_scratch_space(), sizeof(request), sizeof(response));
 
     VERIFY(response.type == static_cast<u32>(VirtIOGPUCtrlType::VIRTIO_GPU_RESP_OK_NODATA));
 }

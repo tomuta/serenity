@@ -31,7 +31,8 @@ private:
     virtual bool set_y_offset(size_t, size_t) override;
 
     PCI::Address m_base_address;
-    RefPtr<VirtIOGPU> m_framebuffer_device {};
+    RefPtr<VirtIOGPU> m_framebuffer_gpu;
+    RefPtr<VirtIOGPUFrameBuffer> m_framebuffer_device;
     RefPtr<Graphics::Console> m_framebuffer_console {};
 };
 

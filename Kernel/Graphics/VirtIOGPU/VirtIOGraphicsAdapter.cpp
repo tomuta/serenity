@@ -24,7 +24,8 @@ VirtIOGraphicsAdapter::VirtIOGraphicsAdapter(PCI::Address address)
 void VirtIOGraphicsAdapter::initialize_framebuffer_devices()
 {
     VERIFY(m_framebuffer_device.is_null());
-    m_framebuffer_device = adopt_ref(*new VirtIOGPU(m_base_address)).leak_ref();
+    m_framebuffer_gpu = adopt_ref(*new VirtIOGPU(m_base_address)).leak_ref();
+    m_framebuffer_device = m_framebuffer_gpu->framebuffer_device(0);
     m_framebuffer_console = Kernel::Graphics::FramebufferConsole::initialize(m_framebuffer_device->framebuffer_vm_object(),
         m_framebuffer_device->framebuffer_width(),
         m_framebuffer_device->framebuffer_height(),

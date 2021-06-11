@@ -137,27 +137,24 @@ struct VirtIOGPUResourceFlush {
     u32 padding;
 };
 
-class VirtIOGPU final : public BlockDevice
-    , public VirtIODevice {
-public:
-    VirtIOGPU(PCI::Address);
-    virtual ~VirtIOGPU() override;
+class VirtIOGPU;
 
-    enum class DriverState : u32 {
-        Initializing,
-        ResizingScanout,
-        Normal,
-    };
+class VirtIOGPUFrameBuffer final : public BlockDevice {
+    friend class VirtIOGPU;
+
+public:
+    VirtIOGPUFrameBuffer(VirtIOGPU&, u32);
+
+    virtual const char* class_name() const override { return "VirtIOGPUFrameBuffer"; }
+
+    virtual void start_request(AsyncBlockDeviceRequest& request) override { request.complete(AsyncDeviceRequest::Failure); }
 
     // TODO: adopt_ref?
     VMObject& framebuffer_vm_object() { return m_framebuffer->vmobject(); }
 
-    size_t framebuffer_width() { return m_display_info.rect.width; }
-    size_t framebuffer_height() { return m_display_info.rect.height; }
-    size_t framebuffer_pitch() { return m_display_info.rect.width * 4; }
-
-private:
-    virtual const char* class_name() const override { return m_class_name.characters(); }
+    size_t framebuffer_width();
+    size_t framebuffer_height();
+    size_t framebuffer_pitch();
 
     virtual int ioctl(FileDescription&, unsigned request, FlatPtr arg) override;
     virtual KResultOr<Region*> mmap(Process&, FileDescription&, const Range&, u64 offset, int prot, bool shared) override;
@@ -165,15 +162,67 @@ private:
     virtual KResultOr<size_t> read(FileDescription&, u64, UserOrKernelBuffer&, size_t) override { return EINVAL; }
     virtual bool can_write(const FileDescription&, size_t) const override { return true; }
     virtual KResultOr<size_t> write(FileDescription&, u64, const UserOrKernelBuffer&, size_t) override { return EINVAL; };
-    virtual void start_request(AsyncBlockDeviceRequest& request) override { request.complete(AsyncDeviceRequest::Failure); }
+
+private:
+    inline VirtIOGPURespDisplayInfo::VirtIOGPUDisplayOne& display_info();
+    inline const VirtIOGPURespDisplayInfo::VirtIOGPUDisplayOne& display_info() const;
+    size_t framebuffer_size_in_bytes() const;
+    inline Region& scratch_space();
+
+    virtual String device_name() const override { return String::formatted("fb{}", m_device_id); }
+    virtual mode_t required_mode() const override { return 0666; }
+
+    void transfer_framebuffer_data_to_host(VirtIOGPURect rect);
+    void flush_displayed_image(VirtIOGPURect dirty_rect);
+
+    void create_framebuffer();
+    void attach_backing_storage();
+    void attach_framebuffer_to_scanout();
+    void draw_pretty_pattern();
+
+    VirtIOGPU& m_gpu;
+    const u32 m_device_id;
+    const u32 m_scanout;
+    const u32 m_framebuffer_resource_id;
+    OwnPtr<Region> m_framebuffer;
+
+    static unsigned next_device_id;
+};
+
+class VirtIOGPU final : public Device
+    , public VirtIODevice {
+    friend class VirtIOGPUFrameBuffer;
+
+public:
+    VirtIOGPU(PCI::Address);
+    virtual ~VirtIOGPU() override;
+
+    RefPtr<VirtIOGPUFrameBuffer> framebuffer_device(u32 framebuffer_id) const
+    {
+        VERIFY(framebuffer_id < VIRTIO_GPU_MAX_SCANOUTS);
+        return m_framebuffers[framebuffer_id];
+    }
+    enum class DriverState : u32 {
+        Initializing,
+        ResizingScanout,
+        Normal,
+    };
+
+private:
+    virtual const char* class_name() const override { return m_class_name.characters(); }
+
+    virtual int ioctl(FileDescription&, unsigned, FlatPtr) override { return EINVAL; }
+    virtual KResultOr<Region*> mmap(Process&, FileDescription&, const Range&, u64, int, bool) override { return EINVAL; }
+    virtual bool can_read(const FileDescription&, size_t) const override { return false; }
+    virtual KResultOr<size_t> read(FileDescription&, u64, UserOrKernelBuffer&, size_t) override { return EINVAL; }
+    virtual bool can_write(const FileDescription&, size_t) const override { return false; }
+    virtual KResultOr<size_t> write(FileDescription&, u64, const UserOrKernelBuffer&, size_t) override { return EINVAL; };
 
     virtual mode_t required_mode() const override { return 0666; }
 
     virtual bool handle_device_config_change() override;
-    virtual String device_name() const override { return String::formatted("fb{}", minor()); }
+    virtual String device_name() const override { return String::formatted("virtgpu{}", minor()); }
     virtual void handle_queue_update(u16 queue_index) override;
-
-    size_t framebuffer_size_in_bytes() const;
 
     u32 get_pending_events();
     void clear_pending_events(u32 event_bitmask);
@@ -183,19 +232,12 @@ private:
     void populate_virtio_gpu_request_header(VirtIOGPUCtrlHeader& header, VirtIOGPUCtrlType ctrl_type, u32 flags = 0);
 
     void query_display_information();
-    void create_framebuffer();
-    void attach_backing_storage();
-    void attach_framebuffer_to_scanout();
-    void draw_pretty_pattern();
-    void transfer_framebuffer_data_to_host(VirtIOGPURect rect);
-    void flush_displayed_image(VirtIOGPURect dirty_rect);
 
-    VirtIOGPURespDisplayInfo::VirtIOGPUDisplayOne m_display_info;
-    Optional<size_t> m_chosen_scanout {};
-    u32 m_framebuffer_id { 0 };
+    VirtIOGPURespDisplayInfo::VirtIOGPUDisplayOne m_display_info[VIRTIO_GPU_MAX_SCANOUTS] {};
+    RefPtr<VirtIOGPUFrameBuffer> m_framebuffers[VIRTIO_GPU_MAX_SCANOUTS];
     Configuration* m_device_configuration { nullptr };
-    size_t m_num_scanouts {};
-    OwnPtr<Region> m_framebuffer;
+    size_t m_num_scanouts { 0 };
+
     DriverState m_current_state;
 
     // Synchronous commands
@@ -204,5 +246,9 @@ private:
 
     static unsigned next_device_id;
 };
+
+inline VirtIOGPURespDisplayInfo::VirtIOGPUDisplayOne& VirtIOGPUFrameBuffer::display_info() { return m_gpu.m_display_info[m_scanout]; }
+inline const VirtIOGPURespDisplayInfo::VirtIOGPUDisplayOne& VirtIOGPUFrameBuffer::display_info() const { return m_gpu.m_display_info[m_scanout]; }
+inline Region& VirtIOGPUFrameBuffer::scratch_space() { return *m_gpu.m_scratch_space; }
 
 }

@@ -54,7 +54,7 @@ $SERENITY_EXTRA_QEMU_ARGS
 -d guest_errors
 -smp 2
 -display gtk
--vga virtio
+-device virtio-vga,max_outputs=1
 -drive file=${SERENITY_DISK_IMAGE},format=raw,index=0,media=disk
 -usb
 -device virtio-serial
