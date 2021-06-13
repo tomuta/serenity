@@ -129,7 +129,7 @@ int VirtIOGPUFrameBuffer::ioctl(FileDescription&, unsigned request, FlatPtr arg)
             .width = user_dirty_rect.width,
             .height = user_dirty_rect.height
         };
-        transfer_framebuffer_data_to_host(display_info().rect);
+        transfer_framebuffer_data_to_host(dirty_rect);
         flush_displayed_image(dirty_rect);
         return 0;
     }
@@ -340,7 +340,7 @@ void VirtIOGPUFrameBuffer::transfer_framebuffer_data_to_host(VirtIOGPURect dirty
     auto& response = *reinterpret_cast<VirtIOGPUCtrlHeader*>((scratch.vaddr().offset(sizeof(request)).as_ptr()));
 
     m_gpu.populate_virtio_gpu_request_header(request.header, VirtIOGPUCtrlType::VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D, VIRTIO_GPU_FLAG_FENCE);
-    request.offset = 0;
+    request.offset = (dirty_rect.x + (dirty_rect.y * display_info().rect.width)) * sizeof(u32);
     request.resource_id = m_framebuffer_resource_id;
     request.rect = dirty_rect;
 
