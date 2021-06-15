@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: BSD-2-Clause
  */
 
+#include <Kernel/Graphics/FramebufferDevice.h>
 #include <Kernel/VirtIO/VirtIOGPU.h>
 #include <LibC/sys/ioctl_numbers.h>
 
@@ -13,18 +14,18 @@
 
 namespace Kernel {
 
-unsigned VirtIOGPUFrameBuffer::next_device_id = 0;
 unsigned VirtIOGPU::next_device_id = 0;
 
 VirtIOGPUFrameBuffer::VirtIOGPUFrameBuffer(VirtIOGPU& gpu, u32 scanout)
     : BlockDevice(gpu.major(), (scanout + 1) << 8 | (gpu.minor() & 0xff)) // TODO: find a better way
     , m_gpu(gpu)
-    , m_device_id(next_device_id++)
+    , m_device_id(FramebufferDevice::next_device_id++)
     , m_scanout(scanout)
     , m_framebuffer_resource_id(scanout + 1) // use a 1:1 mapping (1-based)
 {
     VERIFY(gpu.minor() <= 0xff);
     VERIFY(scanout < 0xff);
+    dbgln("VirtIOGPUFrameBuffer device: {} parent device: {}", device_name(), m_gpu.device_name());
 }
 
 size_t VirtIOGPUFrameBuffer::framebuffer_width()

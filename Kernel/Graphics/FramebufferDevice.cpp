@@ -23,6 +23,8 @@
 
 namespace Kernel {
 
+u32 FramebufferDevice::next_device_id = 0;
+
 NonnullRefPtr<FramebufferDevice> FramebufferDevice::create(const GraphicsDevice& adapter, size_t output_port_index, PhysicalAddress paddr, size_t width, size_t height, size_t pitch)
 {
     return adopt_ref(*new FramebufferDevice(adapter, output_port_index, paddr, width, height, pitch));
@@ -94,11 +96,6 @@ void FramebufferDevice::activate_writes()
     m_graphical_writes_enabled = true;
 }
 
-String FramebufferDevice::device_name() const
-{
-    return String::formatted("fb{}", minor());
-}
-
 UNMAP_AFTER_INIT void FramebufferDevice::initialize()
 {
     m_real_framebuffer_vmobject = AnonymousVMObject::create_for_physical_range(m_framebuffer_address, page_round_up(framebuffer_size_in_bytes()));
@@ -113,6 +110,7 @@ UNMAP_AFTER_INIT void FramebufferDevice::initialize()
 
 UNMAP_AFTER_INIT FramebufferDevice::FramebufferDevice(const GraphicsDevice& adapter, size_t output_port_index, PhysicalAddress addr, size_t width, size_t height, size_t pitch)
     : BlockDevice(29, GraphicsManagement::the().allocate_minor_device_number())
+    , m_device_id(next_device_id++)
     , m_framebuffer_address(addr)
     , m_framebuffer_pitch(pitch)
     , m_framebuffer_width(width)
@@ -124,7 +122,7 @@ UNMAP_AFTER_INIT FramebufferDevice::FramebufferDevice(const GraphicsDevice& adap
     VERIFY(m_framebuffer_pitch);
     VERIFY(m_framebuffer_width);
     VERIFY(m_framebuffer_height);
-    dbgln("Framebuffer {}: address={}, pitch={}, width={}, height={}", minor(), addr, pitch, width, height);
+    dbgln("Framebuffer {}: device={} address={}, pitch={}, width={}, height={}", minor(), device_name(), addr, pitch, width, height);
 }
 
 size_t FramebufferDevice::framebuffer_size_in_bytes() const
