@@ -8,6 +8,7 @@
 
 #include <AK/String.h>
 #include <AK/Types.h>
+#include <Kernel/PCI/Definitions.h>
 #include <Kernel/Devices/BlockDevice.h>
 #include <Kernel/PCI/Definitions.h>
 #include <Kernel/PhysicalAddress.h>

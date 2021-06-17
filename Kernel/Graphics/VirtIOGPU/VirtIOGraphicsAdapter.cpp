@@ -16,7 +16,8 @@ NonnullRefPtr<VirtIOGraphicsAdapter> VirtIOGraphicsAdapter::initialize(PCI::Addr
 }
 
 VirtIOGraphicsAdapter::VirtIOGraphicsAdapter(PCI::Address address)
-    : m_base_address(address)
+    : GraphicsDevice(address)
+    , m_base_address(address)
 {
     VERIFY(GraphicsManagement::the().m_framebuffer_devices_allowed);
 }

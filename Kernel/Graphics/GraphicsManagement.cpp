@@ -20,7 +20,6 @@
 #include <Kernel/Multiboot.h>
 #include <Kernel/PCI/IDs.h>
 #include <Kernel/Panic.h>
-#include <Kernel/PCI/IDs.h>
 #include <Kernel/VM/AnonymousVMObject.h>
 
 namespace Kernel {
