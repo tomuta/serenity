@@ -207,6 +207,18 @@ NonnullRefPtr<FramebufferConsole> FramebufferConsole::initialize(VMObject& vm_ob
 
 void FramebufferConsole::set_resolution(size_t width, size_t height, size_t pitch)
 {
+    if (m_framebuffer_region->size() != page_round_up(height * pitch)) {
+        // TODO: We shouldn't have to do this here. We really should just receive a new framebuffer from the owner...
+        if (m_physical_address.has_value()) {
+            auto region = MM.allocate_kernel_region(m_physical_address.value(), page_round_up(pitch * height), "Framebuffer Console", Region::Access::Read | Region::Access::Write, Region::Cacheable::Yes);
+            VERIFY(region); // TODO: handle error
+            m_framebuffer_region = move(region);
+        } else {
+            // TODO: is this going to work? We probably need a new vmobject...
+            auto& vm_object = m_framebuffer_region->vmobject();
+            auto region = MM.allocate_kernel_region_with_vmobject(vm_object, vm_object.size(), "Framebuffer Console", Region::Access::Read | Region::Access::Write, Region::Cacheable::Yes);
+        }
+    }
     m_width = width;
     m_height = height;
     m_pitch = pitch;
@@ -238,6 +250,7 @@ FramebufferConsole::FramebufferConsole(VMObject& vm_object, size_t width, size_t
 
 FramebufferConsole::FramebufferConsole(PhysicalAddress paddr, size_t width, size_t height, size_t pitch)
     : Console(width, height)
+    , m_physical_address(paddr)
     , m_pitch(pitch)
 {
     dbgln("Framebuffer Console: taking {} bytes", page_round_up(pitch * height));

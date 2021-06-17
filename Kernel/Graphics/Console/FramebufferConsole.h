@@ -45,6 +45,7 @@ protected:
     FramebufferConsole(PhysicalAddress, size_t width, size_t height, size_t pitch);
     FramebufferConsole(VMObject&, size_t width, size_t height, size_t pitch);
     OwnPtr<Region> m_framebuffer_region;
+    Optional<PhysicalAddress> m_physical_address;
     size_t m_pitch;
     mutable SpinLock<u8> m_lock;
 };
