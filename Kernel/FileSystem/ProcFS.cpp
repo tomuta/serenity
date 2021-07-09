@@ -28,7 +28,6 @@ ProcFSComponentsRegistrar& ProcFSComponentsRegistrar::the()
 
 UNMAP_AFTER_INIT void ProcFSComponentsRegistrar::initialize()
 {
-    VERIFY(!s_the.is_initialized());
     s_the.ensure_instance();
 }
 
