@@ -43,6 +43,7 @@ private:
     Time m_expires;
     Time m_remaining {};
     Function<void()> m_callback;
+    Atomic<u32> m_use_count { 0 };
     Atomic<bool> m_cancelled { false };
     Atomic<bool> m_callback_finished { false };
 
@@ -60,7 +61,12 @@ private:
     }
     void clear_cancelled() { return m_cancelled.store(false, AK::memory_order_release); }
     bool set_cancelled() { return m_cancelled.exchange(true, AK::memory_order_acq_rel); }
-    bool is_callback_finished() const { return m_callback_finished.load(AK::memory_order_acquire); }
+    bool is_callback_finished(u32 use_count) const
+    {
+        if (m_use_count.load(AK::MemoryOrder::memory_order_acquire) != use_count)
+            return true;
+        return m_callback_finished.load(AK::memory_order_acquire);
+    }
     void clear_callback_finished() { m_callback_finished.store(false, AK::memory_order_release); }
     void set_callback_finished() { m_callback_finished.store(true, AK::memory_order_release); }
     Time now(bool) const;

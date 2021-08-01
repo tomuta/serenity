@@ -57,6 +57,8 @@ UNMAP_AFTER_INIT TimerQueue::TimerQueue()
 
 bool TimerQueue::add_timer_without_id(NonnullRefPtr<Timer> timer, clockid_t clock_id, const Time& deadline, Function<void()>&& callback)
 {
+    // We need to increment the use count unconditionally, even if we end up not scheduling it!
+    timer->m_use_count.fetch_add(1, AK::MemoryOrder::memory_order_relaxed);
     if (deadline <= TimeManagement::the().current_time(clock_id))
         return false;
 
@@ -75,6 +77,8 @@ bool TimerQueue::add_timer_without_id(NonnullRefPtr<Timer> timer, clockid_t cloc
 
 TimerId TimerQueue::add_timer(NonnullRefPtr<Timer>&& timer)
 {
+    timer->m_use_count.fetch_add(1, AK::MemoryOrder::memory_order_relaxed);
+
     ScopedSpinLock lock(g_timerqueue_lock);
 
     timer->m_id = ++m_timer_id_count;
@@ -171,6 +175,10 @@ bool TimerQueue::cancel_timer(TimerId id)
     NonnullRefPtr<Timer> executing_timer(*found_timer);
     lock.unlock();
 
+    // Capture the current use count. It is possible that a timer gets re-used between
+    // set_cancelled and polling is_callback_finished, which could lead to a deadlock
+    auto use_count = found_timer->m_use_count.load(AK::MemoryOrder::memory_order_acquire);
+
     if (!found_timer->set_cancelled()) {
         // We cancelled it even though the deferred call has been queued already.
         // We do not unref the timer here because the deferred call is still going
@@ -183,7 +191,7 @@ bool TimerQueue::cancel_timer(TimerId id)
 
     // At this point the deferred call is queued and is being executed
     // on another processor. We need to wait until it's complete!
-    while (!found_timer->is_callback_finished())
+    while (!found_timer->is_callback_finished(use_count))
         Processor::wait_check();
 
     return true;
@@ -191,6 +199,10 @@ bool TimerQueue::cancel_timer(TimerId id)
 
 bool TimerQueue::cancel_timer(Timer& timer)
 {
+    // Capture the current use count. It is possible that a timer gets re-used between
+    // set_cancelled and polling is_callback_finished, which could lead to a deadlock
+    auto use_count = timer.m_use_count.load(AK::MemoryOrder::memory_order_acquire);
+
     bool did_already_run = timer.set_cancelled();
     auto& timer_queue = queue_for_timer(timer);
 
@@ -215,7 +227,7 @@ bool TimerQueue::cancel_timer(Timer& timer)
 
     // At this point the deferred call is queued and is being executed
     // on another processor. We need to wait until it's complete!
-    while (!timer.is_callback_finished())
+    while (!timer.is_callback_finished(use_count))
         Processor::wait_check();
 
     return true;
