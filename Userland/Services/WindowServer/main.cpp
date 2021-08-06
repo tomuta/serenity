@@ -132,7 +132,7 @@ int main(int, char**)
     }
 
     auto& screen_input = WindowServer::ScreenInput::the();
-    screen_input.set_cursor_location(WindowServer::Screen::main().rect().center());
+    screen_input.set_initial_cursor_location(WindowServer::Screen::main().rect().center());
     screen_input.set_acceleration_factor(atof(wm_config->read_entry("Mouse", "AccelerationFactor", "1.0").characters()));
     screen_input.set_scroll_step_size(wm_config->read_num_entry("Mouse", "ScrollStepSize", 4));
 
