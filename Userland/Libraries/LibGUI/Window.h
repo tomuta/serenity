@@ -203,6 +203,8 @@ public:
 
     Menu& add_menu(String name);
 
+    void remote_session_changed(Badge<WindowServerConnection>, bool);
+
 protected:
     Window(Core::Object* parent = nullptr);
     virtual void wm_event(WMEvent&);
@@ -233,8 +235,8 @@ private:
     void server_did_destroy();
 
     OwnPtr<WindowBackingStore> create_backing_store(const Gfx::IntSize&);
-    void set_current_backing_store(WindowBackingStore&, bool flush_immediately = false);
-    void flip(const Vector<Gfx::IntRect, 32>& dirty_rects);
+    void set_current_backing_store(WindowBackingStore&, int& remote_bitmap_id, u32& remote_bitmap_sync_tag, bool flush_immediately = false);
+    void flip(const Vector<Gfx::IntRect, 32>& dirty_rects, int& remote_bitmap_id, u32& remote_bitmap_sync_tag);
     void force_update();
 
     WeakPtr<Widget> m_previously_focused_widget;

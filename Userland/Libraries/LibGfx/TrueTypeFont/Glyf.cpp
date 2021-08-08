@@ -210,6 +210,7 @@ RefPtr<Gfx::Bitmap> Rasterizer::accumulate()
     auto bitmap = Gfx::Bitmap::try_create(Gfx::BitmapFormat::BGRA8888, m_size);
     if (!bitmap)
         return {};
+    bitmap->disable_remote_painting();
     Color base_color = Color::from_rgb(0xffffff);
     for (int y = 0; y < m_size.height(); y++) {
         float accumulator = 0.0;

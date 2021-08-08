@@ -57,6 +57,8 @@ public:
     void blit(const IntPoint&, const Gfx::Bitmap&, const IntRect& src_rect, float opacity = 1.0f, bool apply_alpha = true);
     void blit_dimmed(const IntPoint&, const Gfx::Bitmap&, const IntRect& src_rect);
     void blit_brightened(const IntPoint&, const Gfx::Bitmap&, const IntRect& src_rect);
+    void blit_blended(const IntPoint&, const Gfx::Bitmap&, const IntRect& src_rect, Color);
+    void blit_multiplied(const IntPoint&, const Gfx::Bitmap&, const IntRect& src_rect, Color);
     void blit_filtered(const IntPoint&, const Gfx::Bitmap&, const IntRect& src_rect, Function<Color(Color)>);
     void draw_tiled_bitmap(const IntRect& dst_rect, const Gfx::Bitmap&);
     void blit_offset(const IntPoint&, const Gfx::Bitmap&, const IntRect& src_rect, const IntPoint&);
@@ -126,9 +128,13 @@ public:
 
     IntRect clip_rect() const { return state().clip_rect; }
 
+    void set_state(Gfx::IntRect const&, Gfx::IntPoint const&, DrawOp);
+    IntRect clipped_and_translated(IntRect const&) const;
+
 protected:
     IntPoint translation() const { return state().translation; }
     IntRect to_physical(const IntRect& r) const { return r.translated(translation()) * scale(); }
+    IntRect from_physical(const IntRect& r) const { return IntRect { r.left() / scale(), r.top() / scale(), r.width() / scale(), r.height() / scale() }.translated(-translation()); }
     IntPoint to_physical(const IntPoint& p) const { return p.translated(translation()) * scale(); }
     int scale() const { return state().scale; }
     void set_physical_pixel_with_draw_op(u32& pixel, const Color&);
@@ -154,11 +160,31 @@ protected:
     NonnullRefPtr<Gfx::Bitmap> m_target;
     Vector<State, 4> m_state_stack;
 
+    struct RemotePaintingState {
+        IntPoint last_translation;
+        IntRect last_clip_rect;
+        DrawOp last_draw_op { DrawOp::Copy };
+    };
+    RemotePaintingState m_remote_painting;
+
 private:
     Vector<DirectionalRun> split_text_into_directional_runs(Utf8View const&, TextDirection initial_direction);
     bool text_contains_bidirectional_text(Utf8View const&, TextDirection);
     template<typename DrawGlyphFunction>
     void do_draw_text(IntRect const&, Utf8View const& text, Font const&, TextAlignment, TextElision, TextWrapping, DrawGlyphFunction);
+    template<typename FilterFunction, typename RemoteHandler>
+    void do_blit_filtered(const IntPoint&, const Gfx::Bitmap&, const IntRect& src_rect, FilterFunction, RemoteHandler);
+    template<bool do_remote>
+    void do_draw_glyph(IntPoint const&, Glyph const&, Color);
+    template<bool do_remote>
+    void do_draw_glyph_or_emoji(const IntPoint&, u32 code_point, const Font&, Color);
+    template<typename RemoteHandler>
+    void do_draw_bitmap(const IntPoint&, const CharacterBitmap&, Color, RemoteHandler);
+    template<typename RemoteHandler>
+    void do_draw_bitmap(const IntPoint&, const GlyphBitmap&, Color, RemoteHandler);
+
+    template<typename F>
+    void maybe_do_remote_gfx(F f);
 };
 
 class PainterStateSaver {

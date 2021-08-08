@@ -31,7 +31,7 @@ int main(int, char**)
         return 1;
     }
 
-    if (unveil("/tmp", "cw") < 0) {
+    if (unveil("/tmp", "crw") < 0) {
         perror("unveil /tmp cw");
         return 1;
     }
@@ -72,7 +72,7 @@ int main(int, char**)
 
     WindowServer::EventLoop loop;
 
-    if (pledge("stdio video thread sendfd recvfd accept rpath wpath cpath proc", nullptr) < 0) {
+    if (pledge("stdio video thread sendfd recvfd accept rpath wpath cpath proc unix", nullptr) < 0) {
         perror("pledge");
         return 1;
     }
@@ -141,7 +141,9 @@ int main(int, char**)
     auto am = WindowServer::AppletManager::construct();
     auto mm = WindowServer::MenuManager::construct();
 
-    if (unveil("/tmp", "") < 0) {
+    // TODO: Because we need to connect to RemoteDesktopServer (for RemoteGfx)
+    // at a later point we can't unveil all of /tmp!
+    if (unveil("/tmp", "rw") < 0) {
         perror("unveil /tmp");
         return 1;
     }

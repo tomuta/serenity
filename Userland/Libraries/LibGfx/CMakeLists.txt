@@ -1,3 +1,11 @@
+compile_ipc(Remote/RemoteGfxClient.ipc Remote/RemoteGfxClientEndpoint.h)
+compile_ipc(Remote/RemoteGfxServer.ipc Remote/RemoteGfxServerEndpoint.h)
+
+set(GENERATED_SOURCES
+    Remote/RemoteGfxClientEndpoint.h
+    Remote/RemoteGfxServerEndpoint.h
+)
+
 set(SOURCES
     AffineTransform.cpp
     Bitmap.cpp
@@ -12,11 +20,13 @@ set(SOURCES
     DDSLoader.cpp
     DisjointRectSet.cpp
     Emoji.cpp
+    Font.cpp
     FontDatabase.cpp
     GIFLoader.cpp
     ICOLoader.cpp
     ImageDecoder.cpp
     JPGLoader.cpp
+    OneBitBitmap.cpp
     Painter.cpp
     Palette.cpp
     Path.cpp
@@ -27,6 +37,10 @@ set(SOURCES
     PPMLoader.cpp
     Point.cpp
     Rect.cpp
+    Remote/RemoteFontDatabase.cpp
+    Remote/RemoteGfx.cpp
+    Remote/RemoteGfxRenderer.cpp
+    Remote/RemoteGfxServerConnection.cpp
     ShareableBitmap.cpp
     Size.cpp
     StylePainter.cpp

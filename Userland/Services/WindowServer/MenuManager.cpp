@@ -398,4 +398,9 @@ void MenuManager::did_change_theme()
     refresh();
 }
 
+void MenuManager::enable_remote_gfx(bool)
+{
+    refresh();
+}
+
 }

@@ -32,9 +32,12 @@ public:
     static NonnullRefPtr<BitmapFont> create(u8 glyph_height, u8 glyph_width, bool fixed, FontTypes type);
 
     static RefPtr<BitmapFont> load_from_file(String const& path);
+    static RefPtr<BitmapFont> load_from_memory(ReadonlyBytes const&);
     bool write_to_file(String const& path);
 
     ~BitmapFont();
+
+    Type font_type() const override { return Type::Bitmap; }
 
     u8 presentation_size() const override { return m_presentation_size; }
     void set_presentation_size(u8 size) { m_presentation_size = size; }
@@ -104,6 +107,8 @@ public:
     String variant() const override { return String::number(weight()); }
 
     String qualified_name() const override;
+
+    ReadonlyBytes bytes() const override { return m_mapped_file ? m_mapped_file->bytes() : ReadonlyBytes {}; }
 
     static size_t glyph_count_by_type(FontTypes type);
     static String type_name_by_type(FontTypes type);

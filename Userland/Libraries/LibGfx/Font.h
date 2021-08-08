@@ -6,52 +6,62 @@
 
 #pragma once
 
+#include <AK/BitmapView.h>
 #include <AK/MappedFile.h>
 #include <AK/RefCounted.h>
 #include <AK/RefPtr.h>
 #include <AK/String.h>
 #include <AK/Types.h>
 #include <LibGfx/Bitmap.h>
+#include <LibGfx/OneBitBitmap.h>
 #include <LibGfx/Size.h>
+
+namespace RemoteGfx {
+class RemoteGfxSession;
+}
 
 namespace Gfx {
 
 // FIXME: Make a MutableGlyphBitmap buddy class for FontEditor instead?
-class GlyphBitmap {
+class GlyphBitmap : public OneBitBitmap {
 public:
     GlyphBitmap() = default;
     GlyphBitmap(const unsigned* rows, IntSize size)
-        : m_rows(rows)
-        , m_size(size)
+        : OneBitBitmap(OneBitBitmap::Type::GlyphBitmap, size)
+        , m_rows(rows)
     {
     }
+    GlyphBitmap(IntSize const&, BitmapView const&);
+    ~GlyphBitmap();
 
     const unsigned* rows() const { return m_rows; }
     unsigned row(unsigned index) const { return m_rows[index]; }
 
-    bool bit_at(int x, int y) const { return row(y) & (1 << x); }
-    void set_bit_at(int x, int y, bool b)
+    bool bit_at(int x, int y) const override { return row(y) & (1 << x); }
+    void set_bit_at(int x, int y, bool b) override
     {
         auto& mutable_row = const_cast<unsigned*>(m_rows)[y];
+        auto previous_bits = mutable_row;
         if (b)
             mutable_row |= 1 << x;
         else
             mutable_row &= ~(1 << x);
+        if (previous_bits != mutable_row)
+            set_dirty();
     }
 
-    IntSize size() const { return m_size; }
-    int width() const { return m_size.width(); }
-    int height() const { return m_size.height(); }
+    int width() const { return size().width(); }
+    int height() const { return size().height(); }
 
 private:
     const unsigned* m_rows { nullptr };
-    IntSize m_size { 0, 0 };
+    bool m_own_rows { false };
 };
 
 class Glyph {
 public:
-    Glyph(const GlyphBitmap& glyph_bitmap, int left_bearing, int advance, int ascent)
-        : m_glyph_bitmap(glyph_bitmap)
+    Glyph(GlyphBitmap&& glyph_bitmap, int left_bearing, int advance, int ascent)
+        : m_glyph_bitmap(move(glyph_bitmap))
         , m_left_bearing(left_bearing)
         , m_advance(advance)
         , m_ascent(ascent)
@@ -82,9 +92,25 @@ private:
 };
 
 class Font : public RefCounted<Font> {
+private:
+    struct RemoteData {
+        WeakPtr<RemoteGfx::RemoteGfxSession> session;
+        int font_id { 0 };
+
+        RemoteData(RemoteGfx::RemoteGfxSession&);
+        ~RemoteData();
+    };
+
 public:
+    enum class Type {
+        Bitmap,
+        Scaled
+    };
+
     virtual NonnullRefPtr<Font> clone() const = 0;
     virtual ~Font() {};
+
+    virtual Type font_type() const = 0;
 
     virtual u8 presentation_size() const = 0;
 
@@ -123,8 +149,16 @@ public:
 
     Font const& bold_variant() const;
 
+    virtual ReadonlyBytes bytes() const = 0;
+
+    RemoteGfx::RemoteGfxSession* remote_session() { return m_remote_data ? m_remote_data->session.ptr() : nullptr; }
+    int remote_font_id() const { return (m_remote_data && m_remote_data->session.ptr()) ? m_remote_data->font_id : 0; }
+    int enable_remote_painting(bool);
+    void send_to_remote();
+
 private:
     mutable RefPtr<Gfx::Font> m_bold_variant;
+    OwnPtr<RemoteData> m_remote_data;
 };
 
 }
