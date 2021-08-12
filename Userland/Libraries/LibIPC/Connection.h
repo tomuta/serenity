@@ -252,6 +252,18 @@ public:
     SocketType const& socket() const { return *m_socket; }
     bool is_connected() const { return m_socket->is_connected(); }
 
+    void deferred_flush_send_buffer()
+    {
+        if (m_deferred_send_flush_pending || m_send_buffer.is_empty())
+            return;
+
+        m_deferred_send_flush_pending = true;
+        deferred_invoke([this](auto&) {
+            m_deferred_send_flush_pending = false;
+            flush_send_buffer();
+        });
+    }
+
 protected:
     virtual void handle_raw_message(NonnullOwnPtr<IPC::Message>&& message, ReadonlyBytes const& bytes, bool is_peer)
     {
@@ -426,6 +438,7 @@ protected:
 
     Vector<u8> m_send_buffer;
     bool m_buffer_outgoing { false };
+    bool m_deferred_send_flush_pending { false };
 };
 
 }
