@@ -77,9 +77,11 @@ KResultOr<FlatPtr> Process::sys$create_thread(void* (*entry)(void*), Userspace<c
 
     PerformanceManager::add_thread_created_event(*thread);
 
-    SpinlockLocker lock(g_scheduler_lock);
-    thread->set_priority(requested_thread_priority);
-    thread->set_state(Thread::State::Runnable);
+    {
+        SpinlockLocker lock(thread->get_lock());
+        thread->set_priority(requested_thread_priority);
+        thread->set_state(Thread::State::Runnable);
+    }
     return thread->tid().value();
 }
 

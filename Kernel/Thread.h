@@ -844,6 +844,7 @@ public:
         ScopedCritical critical;
         VERIFY(!Memory::s_mm_lock.own_lock());
 
+        SpinlockLocker thread_lock(m_lock);
         SpinlockLocker block_lock(m_block_lock);
         // We need to hold m_block_lock so that nobody can unblock a blocker as soon
         // as it is constructed and registered elsewhere
@@ -857,7 +858,6 @@ public:
             return BlockResult::NotBlocked;
         }
 
-        SpinlockLocker scheduler_lock(g_scheduler_lock);
         // Relaxed semantics are fine for timeout_unblocked because we
         // synchronize on the spin locks already.
         Atomic<bool, AK::MemoryOrder::memory_order_relaxed> timeout_unblocked(false);
@@ -881,10 +881,9 @@ public:
             // threads to die. In that case
             timer_was_added = TimerQueue::the().add_timer_without_id(*m_block_timer, block_timeout.clock_id(), block_timeout.absolute_time(), [&]() {
                 VERIFY(!Processor::current_in_irq());
-                VERIFY(!g_scheduler_lock.own_lock());
                 VERIFY(!m_block_lock.own_lock());
                 // NOTE: this may execute on the same or any other processor!
-                SpinlockLocker scheduler_lock(g_scheduler_lock);
+                SpinlockLocker thread_lock(m_lock);
                 SpinlockLocker block_lock(m_block_lock);
                 if (m_blocker && timeout_unblocked.exchange(true) == false)
                     unblock();
@@ -901,8 +900,8 @@ public:
 
         set_state(Thread::Blocked);
 
-        scheduler_lock.unlock();
         block_lock.unlock();
+        thread_lock.unlock();
 
         dbgln_if(THREAD_DEBUG, "Thread {} blocking on {} ({}) -->", *this, &blocker, blocker.state_string());
         bool did_timeout = false;
@@ -910,7 +909,7 @@ public:
         auto previous_locked = unlock_process_if_locked(lock_count_to_restore);
         for (;;) {
             // Yield to the scheduler, and wait for us to resume unblocked.
-            VERIFY(!g_scheduler_lock.own_lock());
+            VERIFY(!m_lock.own_lock());
             VERIFY(Processor::in_critical());
             yield_without_releasing_big_lock();
             VERIFY(Processor::in_critical());
@@ -940,7 +939,6 @@ public:
         }
 
         if (blocker.was_interrupted_by_signal()) {
-            SpinlockLocker scheduler_lock(g_scheduler_lock);
             SpinlockLocker lock(m_lock);
             dispatch_one_pending_signal();
         }
@@ -1085,6 +1083,8 @@ public:
 
     u32 saved_critical() const { return m_saved_critical; }
     void save_critical(u32 critical) { m_saved_critical = critical; }
+    u32 saved_flags() const { return m_saved_flags; }
+    void save_flags(u32 flags) { m_saved_flags = flags; }
 
     [[nodiscard]] bool is_active() const { return m_is_active; }
 
@@ -1279,7 +1279,8 @@ private:
     ThreadRegisters m_regs {};
     DebugRegisterState m_debug_register_state {};
     TrapFrame* m_current_trap { nullptr };
-    u32 m_saved_critical { 1 };
+    u32 m_saved_critical { 2 };
+    u32 m_saved_flags { 0 };
     IntrusiveListNode<Thread> m_ready_queue_node;
     Atomic<u32> m_cpu { 0 };
     u32 m_cpu_affinity { THREAD_AFFINITY_DEFAULT };

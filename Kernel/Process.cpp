@@ -205,7 +205,7 @@ RefPtr<Process> Process::create_kernel_process(RefPtr<Thread>& first_thread, Str
     if (do_register == RegisterProcess::Yes)
         register_new(*process);
 
-    SpinlockLocker lock(g_scheduler_lock);
+    SpinlockLocker lock(first_thread->get_lock());
     first_thread->set_affinity(affinity);
     first_thread->set_state(Thread::State::Runnable);
     return process;
@@ -761,6 +761,7 @@ RefPtr<Thread> Process::create_kernel_thread(void (*entry)(void*), void* entry_d
         return {};
 
     auto thread = thread_or_error.release_value();
+    SpinlockLocker lock(thread->get_lock());
     thread->set_name(move(name));
     thread->set_affinity(affinity);
     thread->set_priority(priority);
@@ -771,7 +772,6 @@ RefPtr<Thread> Process::create_kernel_thread(void (*entry)(void*), void* entry_d
     regs.set_ip((FlatPtr)entry);
     regs.set_sp((FlatPtr)entry_data); // entry function argument is expected to be in the SP register
 
-    SpinlockLocker lock(g_scheduler_lock);
     thread->set_state(Thread::State::Runnable);
     return thread;
 }

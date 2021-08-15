@@ -395,7 +395,6 @@ PageFaultResponse Region::handle_inode_fault(size_t page_index_in_region)
     VERIFY_INTERRUPTS_DISABLED();
     VERIFY(vmobject().is_inode());
     VERIFY(!s_mm_lock.own_lock());
-    VERIFY(!g_scheduler_lock.own_lock());
 
     auto& inode_vmobject = static_cast<InodeVMObject&>(vmobject());
 
