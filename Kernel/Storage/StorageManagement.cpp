@@ -46,6 +46,10 @@ bool StorageManagement::boot_argument_contains_partition_uuid()
 UNMAP_AFTER_INIT void StorageManagement::enumerate_controllers(bool force_pio)
 {
     VERIFY(m_controllers.is_empty());
+    critical_dmesgln("StorageManagement::enumerate_controllers -->");
+    ScopeGuard guard([&] {
+        critical_dmesgln("<-- StorageManagement::enumerate_controllers");
+    });
 
     using SubclassID = PCI::MassStorage::SubclassID;
     if (!kernel_command_line().disable_physical_storage()) {
@@ -58,19 +62,19 @@ UNMAP_AFTER_INIT void StorageManagement::enumerate_controllers(bool force_pio)
             auto subclass_code = static_cast<SubclassID>(device_identifier.subclass_code().value());
             if (subclass_code == SubclassID::IDEController && kernel_command_line().is_ide_enabled()) {
                 m_controllers.append(IDEController::initialize(device_identifier, force_pio));
-            }
-
-            if (subclass_code == SubclassID::SATAController
+            } else if (subclass_code == SubclassID::SATAController
                 && device_identifier.prog_if().value() == to_underlying(PCI::MassStorage::SATAProgIF::AHCI)) {
                 m_controllers.append(AHCIController::initialize(device_identifier));
-            }
-            if (subclass_code == SubclassID::NVMeController) {
+            } else if (subclass_code == SubclassID::NVMeController) {
+                critical_dmesgln("* {} {} class=0x{:x} subclass=0x{:x} programming_interface=0x{:x}", device_identifier.address(), device_identifier.hardware_id(), device_identifier.class_code(), device_identifier.subclass_code(), device_identifier.prog_if());
                 auto controller = NVMeController::try_initialize(device_identifier);
                 if (controller.is_error()) {
                     dmesgln("Unable to initialize NVMe controller: {}", controller.error());
                 } else {
                     m_controllers.append(controller.release_value());
                 }
+            } else {
+                critical_dmesgln("  {} {} class=0x{:x} subclass=0x{:x} programming_interface=0x{:x}", device_identifier.address(), device_identifier.hardware_id(), device_identifier.class_code(), device_identifier.subclass_code(), device_identifier.prog_if());
             }
         });
     }

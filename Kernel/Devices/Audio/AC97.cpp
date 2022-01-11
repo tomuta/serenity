@@ -29,6 +29,7 @@ static ErrorOr<OwnPtr<Memory::Region>> allocate_physical_buffer(size_t size, Str
 
 UNMAP_AFTER_INIT void AC97::detect()
 {
+    return;
     PCI::enumerate([&](PCI::DeviceIdentifier const& device_identifier) {
         // Only consider PCI audio controllers
         if (device_identifier.class_code().value() != to_underlying(PCI::ClassID::Multimedia)
