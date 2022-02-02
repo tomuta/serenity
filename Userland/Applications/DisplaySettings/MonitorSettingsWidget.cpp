@@ -6,6 +6,7 @@
  */
 
 #include "MonitorSettingsWidget.h"
+#include <AK/QuickSort.h>
 #include <Applications/DisplaySettings/MonitorSettingsGML.h>
 #include <LibGUI/BoxLayout.h>
 #include <LibGUI/Button.h>
@@ -21,31 +22,60 @@ namespace DisplaySettings {
 
 MonitorSettingsWidget::MonitorSettingsWidget()
 {
-    create_resolution_list();
+    create_default_resolution_list();
     create_frame();
     load_current_settings();
 }
 
-void MonitorSettingsWidget::create_resolution_list()
+void MonitorSettingsWidget::create_default_resolution_list()
 {
     // TODO: Find a better way to get the default resolution
-    m_resolutions.append({ 640, 480 });
-    m_resolutions.append({ 800, 600 });
-    m_resolutions.append({ 1024, 768 });
-    m_resolutions.append({ 1280, 720 });
-    m_resolutions.append({ 1280, 768 });
-    m_resolutions.append({ 1280, 960 });
-    m_resolutions.append({ 1280, 1024 });
-    m_resolutions.append({ 1360, 768 });
-    m_resolutions.append({ 1368, 768 });
-    m_resolutions.append({ 1440, 900 });
-    m_resolutions.append({ 1600, 900 });
-    m_resolutions.append({ 1600, 1200 });
-    m_resolutions.append({ 1920, 1080 });
-    m_resolutions.append({ 2048, 1152 });
-    m_resolutions.append({ 2560, 1080 });
-    m_resolutions.append({ 2560, 1440 });
-    m_resolutions.append({ 3440, 1440 });
+    m_resolutions.clear_with_capacity();
+    static constexpr struct {
+        u16 width;
+        u16 height;
+        bool preferred{false};
+    } s_default_resolutions[] = {
+        { 640, 480 },
+        { 800, 600 },
+        { 1024, 768, true },
+        { 1280, 720 },
+        { 1280, 768 },
+        { 1280, 960 },
+        { 1280, 1024 },
+        { 1360, 768 },
+        { 1368, 768 },
+        { 1440, 900 },
+        { 1600, 900 },
+        { 1600, 1200 },
+        { 1920, 1080 },
+        { 2048, 1152 },
+        { 2560, 1080 },
+        { 2560, 1440 },
+        { 3440, 1440 },
+    };
+    for (auto& res : s_default_resolutions)
+        m_resolutions.append({ res.width, res.height, { { 60, res.preferred } } });
+}
+
+bool MonitorSettingsWidget::create_resultion_list_from_edid()
+{
+    if (!m_screen_edids[m_selected_screen_index].has_value())
+        return false;
+
+    auto& edid = m_screen_edids[m_selected_screen_index];
+    auto result = edid->supported_resolutions();
+    if (result.is_error()) {
+        dbgln("Error getting supported resolutions from EDID: {}", result.error());
+        return false;
+    }
+    if (result.value().is_empty()) {
+        dbgln("List of supported resolutions from EDID is empty");
+        return false;
+    }
+
+    m_resolutions = result.release_value();
+    return true;
 }
 
 void MonitorSettingsWidget::create_frame()
@@ -64,12 +94,25 @@ void MonitorSettingsWidget::create_frame()
 
     m_resolution_combo = *find_descendant_of_type_named<GUI::ComboBox>("resolution_combo");
     m_resolution_combo->set_only_allow_values_from_model(true);
-    m_resolution_combo->set_model(*GUI::ItemListModel<Gfx::IntSize>::create(m_resolutions));
+    m_resolution_combo->set_model(*ResolutionInfoModel::create(m_resolutions));
     m_resolution_combo->on_change = [this](auto&, const GUI::ModelIndex& index) {
         auto& selected_screen = m_screen_layout.screens[m_selected_screen_index];
-        selected_screen.resolution = m_resolutions.at(index.row());
+        auto& selected_resolution = m_resolutions.at(index.row());
+        selected_screen.resolution = { selected_resolution.width, selected_resolution.height };
         // Try to auto re-arrange things if there are overlaps or disconnected screens
         m_screen_layout.normalize();
+        selected_screen_index_or_resolution_changed();
+    };
+
+    m_refresh_rate_combo = *find_descendant_of_type_named<GUI::ComboBox>("refresh_rate_combo");
+    m_refresh_rate_combo->set_only_allow_values_from_model(true);
+    m_refresh_rate_combo->set_model(*GUI::ItemListModel<int>::create(m_selected_resolution_refresh_rates));
+    m_refresh_rate_combo->on_change = [this](auto&, const GUI::ModelIndex& index) {
+        //auto& selected_screen = m_screen_layout.screens[m_selected_screen_index];
+        //auto& selected_resolution = m_resolutions.at(index.row());
+        //selected_screen.resolution = { selected_resolution.width, selected_resolution.height };
+        auto selected_refresh_rate = m_selected_resolution_refresh_rates.at(index.row());
+        dbgln("Selected refresh rate: {}", selected_refresh_rate);
         selected_screen_index_or_resolution_changed();
     };
 
@@ -140,6 +183,13 @@ void MonitorSettingsWidget::load_current_settings()
             m_screens.append(String::formatted("{}: {}", i + 1, screen_display_name));
     }
     m_selected_screen_index = m_screen_layout.main_screen_index;
+    if (m_screen_edids[m_selected_screen_index].has_value()) {
+        if (!create_resultion_list_from_edid())
+            create_default_resolution_list();
+    } else {
+        create_default_resolution_list();
+    }
+
     m_screen_combo->set_selected_index(m_selected_screen_index);
     selected_screen_index_or_resolution_changed();
 }
@@ -149,8 +199,22 @@ void MonitorSettingsWidget::selected_screen_index_or_resolution_changed()
     auto& screen = m_screen_layout.screens[m_selected_screen_index];
 
     // Let's attempt to find the current resolution based on the screen layout settings
-    auto index = m_resolutions.find_first_index(screen.resolution).value_or(0);
-    Gfx::IntSize current_resolution = m_resolutions.at(index);
+    auto it = m_resolutions.find_if([&](auto& info) {
+        return (int)info.width == screen.resolution.width() && (int)info.height == screen.resolution.height();
+    });
+    auto index = it != m_resolutions.end() ? it.index() : 0;
+    auto& current_resolution = m_resolutions.at(index);
+
+    m_selected_resolution_refresh_rates.clear_with_capacity();
+    for (auto& refresh_rate : current_resolution.refresh_rates) {
+        // Filter out duplicates after rounding. This can happen if the same
+        // resolution is supported in regular and reduced banking mode
+        auto refresh_rate_hz = refresh_rate.rate.lround();
+        if (!m_selected_resolution_refresh_rates.contains_slow(refresh_rate_hz))
+            m_selected_resolution_refresh_rates.append(refresh_rate_hz);
+    }
+    if (!m_selected_resolution_refresh_rates.is_empty())
+        m_refresh_rate_combo->model()->invalidate();
 
     Optional<unsigned> screen_dpi;
     String screen_dpi_tooltip;
@@ -160,7 +224,7 @@ void MonitorSettingsWidget::selected_screen_index_or_resolution_changed()
             auto x_cm = screen_size.value().horizontal_cm();
             auto y_cm = screen_size.value().vertical_cm();
             auto diagonal_inch = hypot(x_cm, y_cm) / 2.54;
-            auto diagonal_pixels = hypot(current_resolution.width(), current_resolution.height());
+            auto diagonal_pixels = hypot(current_resolution.width, current_resolution.height);
             if (diagonal_pixels != 0.0) {
                 screen_dpi = diagonal_pixels / diagonal_inch;
                 screen_dpi_tooltip = String::formatted("{} inch display ({}cm x {}cm)", roundf(diagonal_inch), x_cm, y_cm);
@@ -184,7 +248,7 @@ void MonitorSettingsWidget::selected_screen_index_or_resolution_changed()
     m_monitor_widget->set_desktop_scale_factor(screen.scale_factor);
 
     // Select the current selected resolution as it may differ
-    m_monitor_widget->set_desktop_resolution(current_resolution);
+    m_monitor_widget->set_desktop_resolution({ current_resolution.width, current_resolution.height });
     m_resolution_combo->set_selected_index(index);
 
     m_monitor_widget->update();

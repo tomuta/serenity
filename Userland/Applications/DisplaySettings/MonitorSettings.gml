@@ -55,6 +55,11 @@
                 name: "resolution_combo"
             }
 
+            @GUI::ComboBox {
+                name: "refresh_rate_combo"
+                fixed_width: 75
+            }
+
             @GUI::Label {
                 name: "display_dpi"
                 text: "96 dpi"
